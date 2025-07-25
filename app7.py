@@ -7,18 +7,23 @@ from flask_limiter.util import get_remote_address
 import requests, json, pytz
 from datetime import datetime
 
-# ← Updated here to lowercase “templates”
+# Point Flask at your lowercase templates/ folder
 app = Flask(__name__, template_folder="templates")
 
-Talisman(app)
+# Security headers – CSP disabled to allow inline styles/scripts
+Talisman(app, content_security_policy=None)
+
+# Rate limiting (100 calls/hour per IP)
 limiter = Limiter(key_func=get_remote_address, default_limits=["100/hour"])
 limiter.init_app(app)
 
+# CORS – restrict to your domains
 CORS(app, origins=[
     "https://reversetracking.onrender.com",
     "https://www.yourdomain.com"
 ])
 
+# Config from environment
 API_KEY           = os.getenv("THE_ODDS_API_KEY")
 DEFAULT_BOOKMAKER = "draftkings"
 MARKETS           = ["h2h", "spreads", "totals"]
@@ -90,6 +95,7 @@ def get_odds(sport):
                 continue
             matchup = f"{home} vs {away}"
 
+            # Convert kickoff to EST
             dt = datetime.strptime(game["commence_time"], "%Y-%m-%dT%H:%M:%SZ")
             kickoff = dt.replace(tzinfo=pytz.utc).astimezone(pytz.timezone("US/Eastern"))
             kickoff_str = kickoff.strftime("%m/%d %I:%M %p")
@@ -97,7 +103,8 @@ def get_odds(sport):
             odds_log.setdefault(sport, {}).setdefault(matchup, {})
             all_markets = {}
 
-            bk_data = next((b for b in game.get("bookmakers", []) if b["key"] == bookmaker), None)
+            bk_list = game.get("bookmakers", [])
+            bk_data = next((b for b in bk_list if b["key"] == bookmaker), None)
             if not bk_data:
                 continue
 
@@ -111,9 +118,9 @@ def get_odds(sport):
                     continue
 
                 curr_price = {o["name"]: decimal_to_american(o["price"])
-                              for o in m["outcomes"] if o.get("price") is not None}
+                              for o in m.get("outcomes", []) if o.get("price") is not None}
                 curr_point = {o["name"]: o["point"]
-                              for o in m["outcomes"] if o.get("point") is not None}
+                              for o in m.get("outcomes", []) if o.get("point") is not None}
 
                 log_entry = odds_log[sport][matchup].setdefault(name, {"price": {}, "points": {}})
                 if not log_entry["price"]:
