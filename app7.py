@@ -61,7 +61,7 @@ def decimal_to_american(d):
 
 @app.route("/")
 def index():
-    return render_template("betkarma5.html")
+    return render_template("index.html")
 
 @app.route("/bookmakers")
 def get_bookmakers():
