@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>betkarma</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f8f9fa;
+      padding: 20px;
+      margin: 0;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 0;
+      font-size: 28px;
+      color: #333;
+    }
+
+    h3 {
+      text-align: center;
+      font-size: 16px;
+      margin-bottom: 30px;
+      color: #666;
+    }
+
+    .dropdown-container {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    select {
+      font-size: 16px;
+      padding: 8px;
+    }
+
+    .game-card {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .matchup {
+      font-weight: bold;
+      font-size: 20px;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .time {
+      text-align: center;
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 16px;
+    }
+
+    .odds-row {
+      display: flex;
+      justify-content: space-around;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+
+    .odds-row div {
+      flex: 1;
+    }
+
+    .odds-cell {
+      padding: 10px 14px;
+      border-radius: 8px;
+      background-color: #e9ecef;
+      margin: 4px;
+      min-width: 80px;
+      text-align: center;
+      font-weight: bold;
+    }
+
+    .diff-positive {
+      background-color: #d4edda;
+      color: #155724;
+    }
+
+    .diff-negative {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+
+    .label-row {
+      display: flex;
+      justify-content: space-around;
+      font-size: 14px;
+      font-weight: bold;
+      color: #555;
+      margin-top: 8px;
+      margin-bottom: 4px;
+    }
+
+    .label-row div {
+      flex: 1;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>RLM – Vegas Doesn't Give Freebies</h1>
+  <h3>A Cash Bros LLC. Affiliate</h3>
+
+  <div class="dropdown-container">
+    <label for="sportSelect">Choose a sport:</label>
+    <select id="sportSelect">
+      <option value="">Loading...</option>
+    </select>
+  </div>
+
+  <div id="gamesContainer"></div>
+
+  <script>
+    const API_BASE = "http://127.0.0.1:5050";
+
+    function decimalToAmerican(decimal) {
+      if (decimal >= 2.0) {
+        return "+" + Math.round((decimal - 1) * 100);
+      } else {
+        return "-" + Math.round(100 / (decimal - 1));
+      }
+    }
+
+    function loadSports() {
+      fetch(`${API_BASE}/sports`)
+        .then(res => res.json())
+        .then(sports => {
+          const select = document.getElementById("sportSelect");
+          select.innerHTML = "";
+          sports.forEach(sport => {
+            const option = document.createElement("option");
+            option.value = sport.key;
+            option.textContent = sport.title;
+            select.appendChild(option);
+          });
+        });
+    }
+
+    function updateGames(sportKey) {
+      fetch(`${API_BASE}/odds/${sportKey}`)
+        .then(res => res.json())
+        .then(games => {
+          const container = document.getElementById("gamesContainer");
+          container.innerHTML = "";
+
+          games.forEach(game => {
+            const card = document.createElement("div");
+            card.className = "game-card";
+
+            const matchup = document.createElement("div");
+            matchup.className = "matchup";
+            matchup.textContent = game.matchup;
+            card.appendChild(matchup);
+
+            const time = document.createElement("div");
+            time.className = "time";
+            time.textContent = game.commence_time_est || "Time TBD";
+            card.appendChild(time);
+
+            const labelRow = document.createElement("div");
+            labelRow.className = "label-row";
+            labelRow.innerHTML = `
+              <div>Open</div>
+              <div>Live</div>
+              <div>Diff</div>
+            `;
+            card.appendChild(labelRow);
+
+            Object.keys(game.opening).forEach(team => {
+              const row = document.createElement("div");
+              row.className = "odds-row";
+
+              const open = decimalToAmerican(game.opening[team]);
+              const curr = decimalToAmerican(game.current[team]);
+
+              const diffNumeric = parseInt(curr) - parseInt(open);
+              const diffFormatted = (diffNumeric >= 0 ? "+" : "") + diffNumeric;
+              const diffClass = diffNumeric > 0 ? "diff-positive" : diffNumeric < 0 ? "diff-negative" : "";
+
+              row.innerHTML = `
+                <div class="odds-cell">${team}</div>
+                <div class="odds-cell">${open}</div>
+                <div class="odds-cell">${curr}</div>
+                <div class="odds-cell ${diffClass}">${diffFormatted}</div>
+              `;
+
+              card.appendChild(row);
+            });
+
+            container.appendChild(card);
+          });
+        });
+    }
+
+    document.getElementById("sportSelect").addEventListener("change", e => {
+      updateGames(e.target.value);
+    });
+
+    window.onload = function () {
+      loadSports();
+    };
+  </script>
+
+</body>
+</html>

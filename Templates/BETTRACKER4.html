@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>BetTracker - Money Line</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f4;
+      padding: 20px;
+    }
+
+    h1 {
+      text-align: center;
+    }
+
+    select {
+      padding: 8px;
+      font-size: 16px;
+      margin-bottom: 20px;
+    }
+
+    .game-card {
+      background-color: white;
+      border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+      margin-bottom: 20px;
+      padding: 15px;
+    }
+
+    .matchup-header {
+      font-weight: bold;
+      font-size: 18px;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    th, td {
+      padding: 10px;
+      text-align: center;
+    }
+
+    th {
+      background-color: #222;
+      color: white;
+    }
+
+    .red {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+
+    .green {
+      background-color: #d4edda;
+      color: #155724;
+    }
+
+    .neutral {
+      background-color: #f2f2f2;
+    }
+
+    .btn-get {
+      background-color: #ff5c33;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 5px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>BETTRACKER: Money Line</h1>
+
+  <label for="sportSelect">Choose a sport:</label>
+  <select id="sportSelect">
+    <option value="">Loading...</option>
+  </select>
+
+  <div id="gamesContainer"></div>
+
+  <script>
+    function decimalToAmerican(decimal) {
+      if (decimal >= 2.0) {
+        return Math.round((decimal - 1) * 100);
+      } else {
+        return Math.round(-100 / (decimal - 1));
+      }
+    }
+
+    function getColorClass(diff) {
+      if (diff > 0) return "green";
+      if (diff < 0) return "red";
+      return "neutral";
+    }
+
+    function loadSports() {
+      fetch("/sports")
+        .then(res => res.json())
+        .then(sports => {
+          const select = document.getElementById("sportSelect");
+          select.innerHTML = "";
+          sports.forEach(s => {
+            const option = document.createElement("option");
+            option.value = s.key;
+            option.textContent = s.title;
+            select.appendChild(option);
+          });
+        });
+    }
+
+    function loadOdds(sportKey) {
+      fetch(`/odds/${sportKey}`)
+        .then(res => res.json())
+        .then(games => {
+          const container = document.getElementById("gamesContainer");
+          container.innerHTML = "";
+
+          games.forEach(game => {
+            const card = document.createElement("div");
+            card.className = "game-card";
+
+            const commence = new Date(game.commence_time);
+            const dateStr = `${String(commence.getMonth() + 1).padStart(2, '0')}/${String(commence.getDate()).padStart(2, '0')}`;
+
+            const matchup = document.createElement("div");
+            matchup.className = "matchup-header";
+            matchup.textContent = `${dateStr} - ${game.matchup}`;
+            card.appendChild(matchup);
+
+            const table = document.createElement("table");
+            const thead = document.createElement("thead");
+            thead.innerHTML = `
+              <tr>
+                <th>Team</th>
+                <th>Open</th>
+                <th>Live</th>
+                <th>Diff</th>
+                <th>Bet %</th>
+                <th>$$$ %</th>
+                <th>Sharp %</th>
+              </tr>
+            `;
+            table.appendChild(thead);
+
+            const tbody = document.createElement("tbody");
+
+            for (const team in game.opening) {
+              const open = game.opening[team];
+              const current = game.current[team];
+
+              const openUS = decimalToAmerican(open);
+              const currUS = decimalToAmerican(current);
+              const diffUS = currUS - openUS;
+
+              const diffClass = getColorClass(diffUS);
+              const diffStr = diffUS > 0 ? `+${diffUS}` : `${diffUS}`;
+
+              const row = document.createElement("tr");
+              row.innerHTML = `
+                <td>${team}</td>
+                <td>${openUS > 0 ? "+" : ""}${openUS}</td>
+                <td>${currUS > 0 ? "+" : ""}${currUS}</td>
+                <td class="${diffClass}">${diffStr}</td>
+                <td>--%</td>
+                <td><button class="btn-get">GET</button></td>
+                <td><button class="btn-get">GET</button></td>
+              `;
+
+              tbody.appendChild(row);
+            }
+
+            table.appendChild(tbody);
+            card.appendChild(table);
+            container.appendChild(card);
+          });
+        })
+        .catch(err => console.error("Error loading odds:", err));
+    }
+
+    document.getElementById("sportSelect").addEventListener("change", e => {
+      const sport = e.target.value;
+      if (sport) {
+        loadOdds(sport);
+      }
+    });
+
+    window.onload = loadSports;
+  </script>
+</body>
+</html>

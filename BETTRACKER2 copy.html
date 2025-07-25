@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sports Betting Line Tracker</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    select { font-size: 16px; padding: 5px; margin-bottom: 10px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    th { background-color: #f2f2f2; }
+  </style>
+</head>
+<body>
+
+  <h1>Sports Betting Line Tracker</h1>
+
+  <label for="sportSelect">Choose a sport:</label>
+  <select id="sportSelect">
+    <option value="">Loading...</option>
+  </select>
+
+  <table id="lineTable">
+    <thead>
+      <tr>
+        <th>Matchup</th>
+        <th>Opening Odds</th>
+        <th>Current Odds</th>
+        <th>Line Movement</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    const API_BASE = "http://127.0.0.1:5050";
+
+    function decimalToAmerican(decimal) {
+      if (decimal >= 2.0) {
+        return "+" + Math.round((decimal - 1) * 100);
+      } else {
+        return "-" + Math.round(100 / (decimal - 1) * -1);
+      }
+    }
+
+    function loadSports() {
+      fetch(`${API_BASE}/sports`)
+        .then(response => response.json())
+        .then(data => {
+          const sportSelect = document.getElementById("sportSelect");
+          sportSelect.innerHTML = "";
+          data.forEach(sport => {
+            const option = document.createElement("option");
+            option.value = sport.key;
+            option.textContent = sport.title;
+            sportSelect.appendChild(option);
+          });
+        })
+        .catch(error => {
+          console.error("Failed to load sports list", error);
+        });
+    }
+
+    function updateTable(sportKey) {
+      fetch(`${API_BASE}/odds/${sportKey}`)
+        .then(response => response.json())
+        .then(games => {
+          const tbody = document.querySelector("#lineTable tbody");
+          tbody.innerHTML = "";
+
+          if (!Array.isArray(games)) return;
+
+          games.forEach(game => {
+            const row = document.createElement("tr");
+
+            let openingStr = "";
+            let currentStr = "";
+            let movementStr = "";
+
+            for (const team in game.opening) {
+              const open = game.opening[team];
+              const curr = game.current[team];
+              const move = game.movement[team];
+              openingStr += `${team}: ${decimalToAmerican(open)}<br>`;
+              currentStr += `${team}: ${decimalToAmerican(curr)}<br>`;
+              movementStr += `${team}: ${move > 0 ? "+" : ""}${move}<br>`;
+            }
+
+            row.innerHTML = `
+              <td>${game.matchup}</td>
+              <td>${openingStr}</td>
+              <td>${currentStr}</td>
+              <td>${movementStr}</td>
+            `;
+
+            tbody.appendChild(row);
+          });
+        })
+        .catch(error => {
+          console.error("Error loading odds:", error);
+        });
+    }
+
+    document.getElementById("sportSelect").addEventListener("change", (e) => {
+      updateTable(e.target.value);
+    });
+
+    window.onload = function () {
+      loadSports();
+    };
+  </script>
+
+</body>
+</html>

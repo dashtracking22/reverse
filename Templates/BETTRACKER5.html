@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>betkarma</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f9f9f9;
+      padding: 20px;
+    }
+
+    h1, h2 {
+      text-align: center;
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 26px;
+    }
+
+    h2 {
+      font-size: 14px;
+      color: #555;
+      margin-bottom: 20px;
+    }
+
+    #sportSelect {
+      display: block;
+      margin: 20px auto;
+      padding: 10px;
+      font-size: 16px;
+    }
+
+    .game-card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      padding: 15px;
+      margin: 20px auto;
+      max-width: 850px;
+    }
+
+    .game-header {
+      text-align: center;
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+
+    .market-box {
+      display: flex;
+      flex-direction: column;
+      margin: 10px 0;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    .market-box h3 {
+      margin: 0 0 5px 0;
+      font-size: 16px;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 5px;
+    }
+
+    .market-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+    }
+
+    .team {
+      flex: 1;
+    }
+
+    .values {
+      flex: 2;
+      text-align: right;
+    }
+
+    .diff-pos {
+      color: green;
+    }
+
+    .diff-neg {
+      color: red;
+    }
+  </style>
+</head>
+<body>
+  <h1>RLM - Vegas Doesn't Give Freebies</h1>
+  <h2>A Cash Bros LLC. Affiliate</h2>
+
+  <select id="sportSelect">
+    <option>Loading...</option>
+  </select>
+
+  <div id="gamesContainer"></div>
+
+  <script>
+    function loadSports() {
+      fetch("/sports")
+        .then(res => res.json())
+        .then(data => {
+          const select = document.getElementById("sportSelect");
+          select.innerHTML = "";
+          data.forEach(s => {
+            const opt = document.createElement("option");
+            opt.value = s.key;
+            opt.textContent = s.title;
+            select.appendChild(opt);
+          });
+        });
+    }
+
+    function loadOdds(sportKey) {
+      fetch(`/odds/${sportKey}`)
+        .then(res => res.json())
+        .then(data => {
+          const container = document.getElementById("gamesContainer");
+          container.innerHTML = "";
+
+          data.forEach(game => {
+            const card = document.createElement("div");
+            card.className = "game-card";
+
+            const header = document.createElement("div");
+            header.className = "game-header";
+            header.textContent = `${game.commence_time_est} — ${game.matchup}`;
+            card.appendChild(header);
+
+            ["spread", "total"].forEach(market => {
+              const box = document.createElement("div");
+              box.className = "market-box";
+
+              const title = document.createElement("h3");
+              title.textContent = market.charAt(0).toUpperCase() + market.slice(1);
+              box.appendChild(title);
+
+              const marketData = game[market];
+              const opening = marketData.opening || {};
+              const current = marketData.current || {};
+              const diff = marketData.diff || {};
+
+              for (let team in current) {
+                const row = document.createElement("div");
+                row.className = "market-row";
+
+                const teamDiv = document.createElement("div");
+                teamDiv.className = "team";
+                teamDiv.textContent = team;
+
+                const valDiv = document.createElement("div");
+                valDiv.className = "values";
+
+                const openVal = opening[team] ?? "-";
+                const currVal = current[team] ?? "-";
+                const diffVal = diff[team];
+                const diffClass = diffVal > 0 ? "diff-pos" : diffVal < 0 ? "diff-neg" : "";
+
+                valDiv.innerHTML = `Open: ${openVal} | Live: ${currVal} | <span class="${diffClass}">Diff: ${diffVal > 0 ? "+" : ""}${diffVal}</span>`;
+
+                row.appendChild(teamDiv);
+                row.appendChild(valDiv);
+                box.appendChild(row);
+              }
+
+              card.appendChild(box);
+            });
+
+            container.appendChild(card);
+          });
+        });
+    }
+
+    document.getElementById("sportSelect").addEventListener("change", e => {
+      loadOdds(e.target.value);
+    });
+
+    window.onload = function () {
+      loadSports();
+    };
+  </script>
+</body>
+</html>

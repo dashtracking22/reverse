@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>betkarma</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f1f3f5;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 28px;
+      margin-bottom: 5px;
+    }
+    h2 {
+      text-align: center;
+      font-size: 14px;
+      color: #555;
+      margin-top: 0;
+      margin-bottom: 20px;
+    }
+
+    select {
+      display: block;
+      margin: 0 auto 20px;
+      padding: 10px;
+      font-size: 16px;
+    }
+
+    .game-card {
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      padding: 20px;
+      margin: 20px auto;
+      max-width: 900px;
+    }
+
+    .game-header {
+      text-align: center;
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 15px;
+    }
+
+    .section {
+      margin-top: 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .section-title {
+      background: #e9ecef;
+      padding: 8px 12px;
+      font-weight: bold;
+      font-size: 16px;
+    }
+
+    .row,
+    .row.header {
+      display: flex;
+      padding: 6px 12px;
+      font-size: 14px;
+      align-items: center;
+    }
+
+    .row.header {
+      font-weight: bold;
+      background: #f8f9fa;
+    }
+
+    .row:not(.header) {
+      border-top: 1px solid #eee;
+    }
+
+    .row span {
+      flex: 1;
+      text-align: center;
+    }
+
+    .diff-pos { color: green; }
+    .diff-neg { color: red; }
+  </style>
+</head>
+<body>
+  <h1>RLM - Vegas Doesn't Give Freebies</h1>
+  <h2>A Cash Bros LLC. Affiliate</h2>
+
+  <select id="sportSelect">
+    <option>Loading...</option>
+  </select>
+
+  <div id="gamesContainer"></div>
+
+  <script>
+    const API = "http://127.0.0.1:5050";
+
+    function renderSection(title, data) {
+      if (!data.opening || !data.current) return null;
+
+      const sec = document.createElement("div");
+      sec.className = "section";
+
+      const hdr = document.createElement("div");
+      hdr.className = "section-title";
+      hdr.textContent = title;
+      sec.appendChild(hdr);
+
+      const headerRow = document.createElement("div");
+      headerRow.className = "row header";
+      headerRow.innerHTML = `<span>Team</span><span>Open</span><span>Live</span><span>Diff</span>`;
+      sec.appendChild(headerRow);
+
+      const teams = Object.keys(data.current.price);
+      teams.forEach(team => {
+        const row = document.createElement("div");
+        row.className = "row";
+
+        // Opening values
+        const op = data.opening.points[team];
+        const opOdds = data.opening.price[team] || "-";
+        const openText = title === "Moneyline"
+          ? opOdds
+          : (op !== undefined ? op : "") + ` (${opOdds})`;
+
+        // Live values
+        const cp = data.current.points[team];
+        const cpOdds = data.current.price[team] || "-";
+        const liveText = title === "Moneyline"
+          ? cpOdds
+          : (cp !== undefined ? cp : "") + ` (${cpOdds})`;
+
+        // Diff
+        const diff = data.diff[team] || 0;
+        const diffClass = diff > 0 ? "diff-pos" : diff < 0 ? "diff-neg" : "";
+
+        row.innerHTML = `
+          <span>${team}</span>
+          <span>${openText}</span>
+          <span>${liveText}</span>
+          <span class="${diffClass}">${diff > 0 ? "+" : ""}${diff}</span>
+        `;
+        sec.appendChild(row);
+      });
+
+      return sec;
+    }
+
+    function renderGame(g) {
+      const card = document.createElement("div");
+      card.className = "game-card";
+
+      const header = document.createElement("div");
+      header.className = "game-header";
+      header.textContent = `${g.commence_time_est} — ${g.matchup}`;
+      card.appendChild(header);
+
+      ["moneyline","spread","total"].forEach(type => {
+        const sec = renderSection(
+          type.charAt(0).toUpperCase() + type.slice(1),
+          g[type]
+        );
+        if (sec) card.appendChild(sec);
+      });
+
+      return card;
+    }
+
+    function loadSports() {
+      fetch(`${API}/sports`)
+        .then(r => r.json())
+        .then(list => {
+          const sel = document.getElementById("sportSelect");
+          sel.innerHTML = "";
+          list.forEach(s => {
+            const o = document.createElement("option");
+            o.value = s.key;
+            o.textContent = s.title;
+            sel.appendChild(o);
+          });
+        });
+    }
+
+    function loadOdds(sp) {
+      fetch(`${API}/odds/${sp}`)
+        .then(r => r.json())
+        .then(games => {
+          const cont = document.getElementById("gamesContainer");
+          cont.innerHTML = "";
+          games.forEach(g => cont.appendChild(renderGame(g)));
+        });
+    }
+
+    document.getElementById("sportSelect")
+      .addEventListener("change", e => loadOdds(e.target.value));
+
+    window.onload = () => loadSports();
+  </script>
+</body>
+</html>
