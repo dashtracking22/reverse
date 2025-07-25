@@ -7,13 +7,13 @@ from flask_limiter.util import get_remote_address
 import requests, json, pytz
 from datetime import datetime
 
-# Point Flask at your lowercase templates/ folder
-app = Flask(__name__, template_folder="templates")
+# point Flask at your lowercase templates/ and static/ folders
+app = Flask(__name__, template_folder="templates", static_folder="static")
 
-# Security headers – CSP disabled to allow inline styles/scripts
-Talisman(app, content_security_policy=None)
+# strict CSP, but skip HTTP→HTTPS redirects locally
+Talisman(app, force_https=False)
 
-# Rate limiting (100 calls/hour per IP)
+# rate limiting (100 calls/hour per IP)
 limiter = Limiter(key_func=get_remote_address, default_limits=["100/hour"])
 limiter.init_app(app)
 
@@ -23,7 +23,6 @@ CORS(app, origins=[
     "https://www.yourdomain.com"
 ])
 
-# Config from environment
 API_KEY           = os.getenv("THE_ODDS_API_KEY")
 DEFAULT_BOOKMAKER = "draftkings"
 MARKETS           = ["h2h", "spreads", "totals"]
@@ -74,6 +73,9 @@ def get_sports():
 
 @app.route("/odds/<sport>")
 def get_odds(sport):
+    if not API_KEY:
+        return jsonify({"error": "Missing THE_ODDS_API_KEY"}), 500
+
     bookmaker = request.args.get("bookmaker", DEFAULT_BOOKMAKER)
     odds_log  = load_odds_log()
 
@@ -95,7 +97,6 @@ def get_odds(sport):
                 continue
             matchup = f"{home} vs {away}"
 
-            # Convert kickoff to EST
             dt = datetime.strptime(game["commence_time"], "%Y-%m-%dT%H:%M:%SZ")
             kickoff = dt.replace(tzinfo=pytz.utc).astimezone(pytz.timezone("US/Eastern"))
             kickoff_str = kickoff.strftime("%m/%d %I:%M %p")
@@ -103,8 +104,7 @@ def get_odds(sport):
             odds_log.setdefault(sport, {}).setdefault(matchup, {})
             all_markets = {}
 
-            bk_list = game.get("bookmakers", [])
-            bk_data = next((b for b in bk_list if b["key"] == bookmaker), None)
+            bk_data = next((b for b in game.get("bookmakers", []) if b["key"] == bookmaker), None)
             if not bk_data:
                 continue
 
