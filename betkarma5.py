@@ -7,17 +7,17 @@ from flask_limiter.util import get_remote_address
 import requests, json, pytz
 from datetime import datetime
 
-# Tell Flask where to find your HTML templates
+# Point Flask at your existing Templates/ folder
 app = Flask(__name__, template_folder="Templates")
 
-# Add security headers
+# Security headers
 Talisman(app)
 
-# Proper Limiter setup
+# Rate limiting (100 calls/hour per IP)
 limiter = Limiter(key_func=get_remote_address, default_limits=["100/hour"])
 limiter.init_app(app)
 
-# Restrict CORS to your domains
+# CORS – restrict to your domains
 CORS(app, origins=[
     "https://reversetracking.onrender.com",
     "https://www.yourdomain.com"
@@ -62,7 +62,7 @@ def decimal_to_american(d):
 
 @app.route("/")
 def index():
-    return render_template("betkarma4.html")
+    return render_template("betkarma5.html")
 
 @app.route("/bookmakers")
 def get_bookmakers():
@@ -117,11 +117,16 @@ def get_odds(sport):
                 if not name:
                     continue
 
-                curr_price = {o["name"]: decimal_to_american(o["price"])
-                              for o in m.get("outcomes", []) if o.get("price") is not None}
-                curr_point = {o["name"]: o["point"]
-                              for o in m.get("outcomes", []) if o.get("point") is not None}
+                curr_price = {
+                    o["name"]: decimal_to_american(o["price"])
+                    for o in m.get("outcomes", []) if o.get("price") is not None
+                }
+                curr_point = {
+                    o["name"]: o["point"]
+                    for o in m.get("outcomes", []) if o.get("point") is not None
+                }
 
+                # Save opening odds if first time
                 log_entry = odds_log[sport][matchup].setdefault(name, {"price": {}, "points": {}})
                 if not log_entry["price"]:
                     log_entry["price"].update(curr_price)
@@ -138,8 +143,8 @@ def get_odds(sport):
                         diffs[team] = round(curr_point[team] - opening_points[team], 1)
 
                 all_markets[name] = {
-                    "opening": {"price": opening_price, "points": opening_points},
-                    "current": {"price": curr_price,    "points": curr_point},
+                    "opening": {"price": opening_price,  "points": opening_points},
+                    "current": {"price": curr_price,     "points": curr_point},
                     "diff":    diffs
                 }
 
