@@ -1,4 +1,3 @@
-<!-- betkarma3.html -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -92,9 +91,84 @@
   <div id="gamesContainer"></div>
 
   <script>
-    const API = "http://127.0.0.1:5050";
+    const API = location.origin;
 
-    // populate book dropdown
+    function renderSection(title, data) {
+      if (!data.opening || !data.current) return null;
+
+      const sec = document.createElement("div");
+      sec.className = "section";
+
+      const hdr = document.createElement("div");
+      hdr.className = "section-title";
+      hdr.textContent = title;
+      sec.appendChild(hdr);
+
+      const headerRow = document.createElement("div");
+      headerRow.className = "row header";
+      headerRow.innerHTML = `
+        <span>Team</span>
+        <span>Open</span>
+        <span>Live</span>
+        <span>Diff</span>
+      `;
+      sec.appendChild(headerRow);
+
+      const teams = Object.keys(data.current.price);
+      teams.forEach(team => {
+        const row = document.createElement("div");
+        row.className = "row";
+
+        // Opening values
+        const op = data.opening.points[team];
+        const opOdds = data.opening.price[team] || "-";
+        const openText = title === "Moneyline"
+          ? opOdds
+          : (op !== undefined ? op : "") + ` (${opOdds})`;
+
+        // Live values
+        const cp = data.current.points[team];
+        const cpOdds = data.current.price[team] || "-";
+        const liveText = title === "Moneyline"
+          ? cpOdds
+          : (cp !== undefined ? cp : "") + ` (${cpOdds})`;
+
+        // Diff
+        const diff = data.diff[team] || 0;
+        const diffClass = diff > 0 ? "diff-pos" : diff < 0 ? "diff-neg" : "";
+
+        row.innerHTML = `
+          <span>${team}</span>
+          <span>${openText}</span>
+          <span>${liveText}</span>
+          <span class="${diffClass}">${diff > 0 ? "+" : ""}${diff}</span>
+        `;
+        sec.appendChild(row);
+      });
+
+      return sec;
+    }
+
+    function renderGame(g) {
+      const card = document.createElement("div");
+      card.className = "game-card";
+
+      const header = document.createElement("div");
+      header.className = "game-header";
+      header.textContent = `${g.commence_time_est} — ${g.matchup}`;
+      card.appendChild(header);
+
+      ["moneyline", "spread", "total"].forEach(type => {
+        const sec = renderSection(
+          type.charAt(0).toUpperCase() + type.slice(1),
+          g[type]
+        );
+        if (sec) card.appendChild(sec);
+      });
+
+      return card;
+    }
+
     function loadBookmakers() {
       return fetch(`${API}/bookmakers`)
         .then(r => r.json())
@@ -110,7 +184,6 @@
         });
     }
 
-    // populate sport dropdown
     function loadSports() {
       return fetch(`${API}/sports`)
         .then(r => r.json())
@@ -126,75 +199,27 @@
         });
     }
 
-    // render one market section (moneyline/spread/total)
-    function renderSection(title, data) {
-      if (!data.opening || !data.current) return null;
-      const sec = document.createElement("div");
-      sec.className = "section";
-      sec.innerHTML = `<div class="section-title">${title}</div>`;
-      const headerRow = document.createElement("div");
-      headerRow.className = "row header";
-      headerRow.innerHTML = `<span>Team</span><span>Open</span><span>Live</span><span>Diff</span>`;
-      sec.appendChild(headerRow);
-
-      Object.keys(data.current.price).forEach(team => {
-        const row = document.createElement("div");
-        row.className = "row";
-        // opening
-        const op    = data.opening.points[team];
-        const opO   = data.opening.price[team] || "-";
-        const openT = title === "Moneyline" ? opO : `${op} (${opO})`;
-        // live
-        const cp    = data.current.points[team];
-        const cpO   = data.current.price[team] || "-";
-        const liveT = title === "Moneyline" ? cpO : `${cp} (${cpO})`;
-        // diff
-        const d     = data.diff[team] || 0;
-        const cls   = d>0 ? "diff-pos" : d<0 ? "diff-neg" : "";
-        row.innerHTML = `
-          <span>${team}</span>
-          <span>${openT}</span>
-          <span>${liveT}</span>
-          <span class="${cls}">${d>0?"+":""}${d}</span>
-        `;
-        sec.appendChild(row);
-      });
-      return sec;
-    }
-
-    // render an entire game card
-    function renderGame(g) {
-      const card = document.createElement("div");
-      card.className = "game-card";
-      card.innerHTML = `<div class="game-header">${g.commence_time_est} — ${g.matchup}</div>`;
-      ["moneyline","spread","total"].forEach(type => {
-        const sec = renderSection(type.charAt(0).toUpperCase() + type.slice(1), g[type]);
-        if (sec) card.appendChild(sec);
-      });
-      return card;
-    }
-
-    // fetch & render odds for selected sport+book
     function loadOdds() {
       const sp = document.getElementById("sportSelect").value;
       const bk = document.getElementById("bookmakerSelect").value;
       fetch(`${API}/odds/${sp}?bookmaker=${bk}`)
         .then(r => r.json())
         .then(games => {
-          const c = document.getElementById("gamesContainer");
-          c.innerHTML = "";
-          games.forEach(g => c.appendChild(renderGame(g)));
+          const cont = document.getElementById("gamesContainer");
+          cont.innerHTML = "";
+          games.forEach(g => cont.appendChild(renderGame(g)));
         });
     }
 
-    // wire up change events
-    document.getElementById("sportSelect").addEventListener("change", loadOdds);
-    document.getElementById("bookmakerSelect").addEventListener("change", loadOdds);
+    document
+      .getElementById("bookmakerSelect")
+      .addEventListener("change", loadOdds);
+    document
+      .getElementById("sportSelect")
+      .addEventListener("change", loadOdds);
 
-    // initial load
-    window.onload = () => {
+    window.onload = () =>
       Promise.all([loadBookmakers(), loadSports()]).then(loadOdds);
-    };
   </script>
 </body>
 </html>
