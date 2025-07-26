@@ -42,16 +42,16 @@ def save_opening_line(key, value):
     except Exception as e:
         print("[Redis save error]", e)
 
-def get_opening_line(key):
-    url = f"{REDIS_URL}/get/{key}"
+def batch_get_opening_lines(keys):
+    url = f"{REDIS_URL}/mget"
     try:
-        res = requests.get(url, headers=HEADERS)
-        print(f"[Redis GET] {key} → {res.status_code}: {res.text}")
-        if res.status_code == 200 and res.json().get("result"):
-            return res.json()["result"]
+        payload = json.dumps(keys)
+        res = requests.post(url, headers=HEADERS, data=payload)
+        if res.status_code == 200:
+            return res.json().get("result", [])
     except Exception as e:
-        print("[Redis get error]", e)
-    return None
+        print("[Redis batch get error]", e)
+    return [None] * len(keys)
 
 def to_american(decimal):
     try:
@@ -117,6 +117,35 @@ def odds(sport):
     eastern = pytz.timezone("US/Eastern")
     results = []
 
+    # Collect all Redis keys for opening odds and points
+    redis_keys = []
+
+    # Map to remember which key belongs to which outcome
+    key_to_info = {}
+
+    for game in data:
+        for bm in game["bookmakers"]:
+            if bm["key"] != bookmaker:
+                continue
+            for market in bm["markets"]:
+                if market["key"] not in MARKETS:
+                    continue
+                for outcome in market["outcomes"]:
+                    team = outcome["name"]
+                    key_odds = f"{sport}:{game['id']}:{market['key']}:{team}:open_odds"
+                    key_point = f"{sport}:{game['id']}:{market['key']}:{team}:open_point"
+                    redis_keys.append(key_odds)
+                    redis_keys.append(key_point)
+                    key_to_info[key_odds] = (game, bm, market, outcome)
+                    key_to_info[key_point] = (game, bm, market, outcome)
+
+    # Batch fetch all opening odds and points
+    redis_results = batch_get_opening_lines(redis_keys)
+
+    # Build dict for quick lookup
+    redis_values = dict(zip(redis_keys, redis_results))
+
+    # Process games now with Redis data
     for game in data:
         matchup = f"{game['home_team']} vs {game['away_team']}"
         start_time = datetime.fromisoformat(game['commence_time'].replace("Z", "+00:00")).astimezone(eastern)
@@ -129,11 +158,9 @@ def odds(sport):
         for bm in game["bookmakers"]:
             if bm["key"] != bookmaker:
                 continue
-
             for market in bm["markets"]:
                 if market["key"] not in MARKETS:
                     continue
-
                 for outcome in market["outcomes"]:
                     team = outcome["name"]
                     point = outcome.get("point")
@@ -142,8 +169,8 @@ def odds(sport):
                     odds_key = f"{sport}:{game['id']}:{market['key']}:{team}:open_odds"
                     point_key = f"{sport}:{game['id']}:{market['key']}:{team}:open_point"
 
-                    open_odds_raw = get_opening_line(odds_key)
-                    open_point_raw = get_opening_line(point_key)
+                    open_odds_raw = redis_values.get(odds_key)
+                    open_point_raw = redis_values.get(point_key)
 
                     open_odds = None
                     open_point = None
