@@ -139,42 +139,58 @@ def odds(sport):
                     point = outcome.get("point")
                     live_decimal = outcome.get("price")
 
-                    key_prefix = f"{sport}:{game['id']}:{market['key']}:{team}:open"
-                    open_decimal_raw = get_opening_line(key_prefix)
-                    open_decimal = None
-                    if open_decimal_raw:
-                        try:
-                            open_decimal = json.loads(open_decimal_raw).get("value")
-                        except Exception as e:
-                            print("Error parsing open_decimal JSON:", e)
-                            open_decimal = None
+                    odds_key = f"{sport}:{game['id']}:{market['key']}:{team}:open_odds"
+                    point_key = f"{sport}:{game['id']}:{market['key']}:{team}:open_point"
 
-                    if not open_decimal and live_decimal is not None:
-                        save_opening_line(key_prefix, live_decimal)
-                        open_decimal = live_decimal
+                    open_odds_raw = get_opening_line(odds_key)
+                    open_point_raw = get_opening_line(point_key)
+
+                    open_odds = None
+                    open_point = None
+
+                    if open_odds_raw:
+                        try:
+                            open_odds = float(json.loads(open_odds_raw).get("value"))
+                        except Exception as e:
+                            print("Error parsing open_odds JSON:", e)
+
+                    if open_point_raw:
+                        try:
+                            open_point = float(json.loads(open_point_raw).get("value"))
+                        except Exception as e:
+                            print("Error parsing open_point JSON:", e)
+
+                    # Save opening odds if missing
+                    if open_odds is None and live_decimal is not None:
+                        save_opening_line(odds_key, live_decimal)
+                        open_odds = live_decimal
+
+                    # Save opening point if missing and point exists (for spreads/totals)
+                    if open_point is None and point is not None:
+                        save_opening_line(point_key, point)
+                        open_point = point
 
                     diff = "+0"
-                    if open_decimal is not None and live_decimal is not None:
-                        if market["key"] in ["spreads", "totals"]:
+
+                    if market["key"] in ["spreads", "totals"]:
+                        if open_point is not None and point is not None:
                             try:
-                                open_point = point  # Use current point as open_point fallback
-                                if open_decimal_raw:
-                                    open_point = float(point) - float(json.loads(open_decimal_raw).get("value", point))
-                                diff_val = float(point) - open_point
+                                diff_val = float(point) - float(open_point)
                                 diff = f"{diff_val:+.1f}"
                             except:
                                 diff = "+0"
-                        else:
+                    else:
+                        if open_odds is not None and live_decimal is not None:
                             try:
-                                diff_val = int((float(live_decimal) - float(open_decimal)) * 100)
+                                diff_val = int((float(live_decimal) - float(open_odds)) * 100)
                                 diff = f"{diff_val:+}"
                             except:
                                 diff = "+0"
 
                     display_open = (
-                        f"{point} ({to_american(open_decimal)})"
-                        if market["key"] in ["spreads", "totals"] and point is not None
-                        else to_american(open_decimal)
+                        f"{open_point} ({to_american(open_odds)})"
+                        if market["key"] in ["spreads", "totals"] and open_point is not None
+                        else to_american(open_odds)
                     )
                     display_live = (
                         f"{point} ({to_american(live_decimal)})"
