@@ -1,75 +1,125 @@
-const API = location.origin;
+document.addEventListener("DOMContentLoaded", () => {
+  const sportSelect = document.getElementById("sport-select");
+  const gamesContainer = document.getElementById("games-container");
 
-function renderSection(title, data) {
-  if (!data.opening || !data.current) return null;
-  const sec = document.createElement("div"); sec.className = "section";
-  const hdr = document.createElement("div"); hdr.className = "section-title";
-  hdr.textContent = title; sec.appendChild(hdr);
-
-  const headerRow = document.createElement("div"); headerRow.className = "row header";
-  headerRow.innerHTML = `<span>Team</span><span>Open</span><span>Live</span><span>Diff</span>`;
-  sec.appendChild(headerRow);
-
-  Object.keys(data.current.price).forEach(team => {
-    const row = document.createElement("div"); row.className = "row";
-    const op = data.opening.points[team], opO = data.opening.price[team]||"-";
-    const openT = title==="Moneyline"?opO:`${op} (${opO})`;
-    const cp = data.current.points[team], cpO = data.current.price[team]||"-";
-    const liveT = title==="Moneyline"?cpO:`${cp} (${cpO})`;
-    const d = data.diff[team]||0, cls = d>0?"diff-pos":d<0?"diff-neg":"";
-    row.innerHTML = `<span>${team}</span><span>${openT}</span><span>${liveT}</span><span class="${cls}">${d>0?"+":""}${d}</span>`;
-    sec.appendChild(row);
-  });
-
-  return sec;
-}
-
-function renderGame(g) {
-  const card = document.createElement("div"); card.className="game-card";
-  const header = document.createElement("div"); header.className="game-header";
-  header.textContent=`${g.commence_time_est} — ${g.matchup}`; card.appendChild(header);
-
-  ["moneyline","spread","total"].forEach(type => {
-    const sec = renderSection(type.charAt(0).toUpperCase()+type.slice(1), g[type]);
-    if (sec) card.appendChild(sec);
-  });
-  return card;
-}
-
-function loadBookmakers() {
-  return fetch(`${API}/bookmakers`).then(r=>r.json()).then(list=>{
-    const sel=document.getElementById("bookmakerSelect"); sel.innerHTML="";
-    list.forEach(b=>{ 
-      const o=document.createElement("option"); 
-      o.value=b.key; o.textContent=b.title; 
-      sel.appendChild(o);
+  fetch("/sports")
+    .then((res) => res.json())
+    .then((sports) => {
+      sports.forEach((sport) => {
+        const option = document.createElement("option");
+        option.value = sport.key;
+        option.textContent = sport.title;
+        sportSelect.appendChild(option);
+      });
     });
+
+  sportSelect.addEventListener("change", () => {
+    const sport = sportSelect.value;
+    fetch(`/odds/${sport}`)
+      .then((res) => res.json())
+      .then((games) => {
+        gamesContainer.innerHTML = "";
+        games.forEach((game) => {
+          const card = document.createElement("div");
+          card.className = "card";
+
+          const title = document.createElement("h3");
+          title.textContent = `${game.matchup} — ${game.commence_time_est}`;
+          card.appendChild(title);
+
+          // Helper function
+          const renderSection = (label, data) => {
+            if (!data.opening) return;
+
+            const section = document.createElement("div");
+            section.className = "section";
+
+            const header = document.createElement("h4");
+            header.textContent = label;
+            section.appendChild(header);
+
+            const grid = document.createElement("div");
+            grid.className = "grid";
+
+            // Header row
+            ["Team", "Open", "Live", "Diff"].forEach((col) => {
+              const cell = document.createElement("div");
+              cell.className = "grid-header";
+              cell.textContent = col;
+              grid.appendChild(cell);
+            });
+
+            Object.keys(data.opening.price || {}).forEach((team) => {
+              const rowData = {
+                team,
+                open: "",
+                live: "",
+                diff: "",
+              };
+
+              if (label === "Moneyline") {
+                rowData.open = data.opening.price[team];
+                rowData.live = data.current.price[team];
+                rowData.diff = data.diff[team] > 0
+                  ? `+${data.diff[team]}`
+                  : `${data.diff[team]}`;
+              } else {
+                const ptOpen = data.opening.points[team];
+                const ptLive = data.current.points[team];
+                const priceOpen = data.opening.price[team];
+                const priceLive = data.current.price[team];
+                const ptDiff = data.diff[team];
+
+                rowData.open = `${ptOpen} (${priceOpen})`;
+                rowData.live = `${ptLive} (${priceLive})`;
+                rowData.diff = ptDiff > 0 ? `+${ptDiff}` : `${ptDiff}`;
+              }
+
+              // Team
+              const teamCell = document.createElement("div");
+              teamCell.className = "grid-cell";
+              teamCell.textContent = rowData.team;
+              grid.appendChild(teamCell);
+
+              // Open
+              const openCell = document.createElement("div");
+              openCell.className = "grid-cell";
+              openCell.textContent = rowData.open;
+              grid.appendChild(openCell);
+
+              // Live
+              const liveCell = document.createElement("div");
+              liveCell.className = "grid-cell";
+              liveCell.textContent = rowData.live;
+              grid.appendChild(liveCell);
+
+              // Diff
+              const diffCell = document.createElement("div");
+              diffCell.className = "grid-cell";
+              diffCell.textContent = rowData.diff;
+              diffCell.className +=
+                parseFloat(rowData.diff) > 0
+                  ? " diff-positive"
+                  : parseFloat(rowData.diff) < 0
+                  ? " diff-negative"
+                  : "";
+              grid.appendChild(diffCell);
+            });
+
+            section.appendChild(grid);
+            card.appendChild(section);
+          };
+
+          renderSection("Moneyline", game.moneyline);
+          renderSection("Spread", game.spread);
+          renderSection("Total", game.total);
+
+          gamesContainer.appendChild(card);
+        });
+      })
+      .catch((err) => {
+        console.error("Error loading odds:", err);
+        gamesContainer.innerHTML = `<p>Error loading data. Please try again later.</p>`;
+      });
   });
-}
-
-function loadSports() {
-  return fetch(`${API}/sports`).then(r=>r.json()).then(list=>{
-    const sel=document.getElementById("sportSelect"); sel.innerHTML="";
-    list.forEach(s=>{ 
-      const o=document.createElement("option"); 
-      o.value=s.key; o.textContent=s.title; 
-      sel.appendChild(o);
-    });
-  });
-}
-
-function loadOdds() {
-  const sp = document.getElementById("sportSelect").value;
-  const bk = document.getElementById("bookmakerSelect").value;
-  fetch(`${API}/odds/${sp}?bookmaker=${bk}`)
-    .then(r=>r.json())
-    .then(games=>{
-      const cont = document.getElementById("gamesContainer");
-      cont.innerHTML = "";
-      games.forEach(g => cont.appendChild(renderGame(g)));
-    });
-}
-
-document.getElementById("bookmakerSelect").addEventListener("change", loadOdds);
-document.getElementById("sportSelect").addEventListener("change", loadOdds);
-window.onload = () => Promise.all([loadBookmakers(), loadSports()]).then(loadOdds);
+});
