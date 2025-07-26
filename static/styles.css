@@ -1,5 +1,5 @@
 body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-family: 'Segoe UI', Tahoma, sans-serif;
   background-color: #f5f7fa;
   margin: 0;
   padding: 0;
@@ -7,86 +7,96 @@ body {
 }
 
 header {
-  background-color: #222;
-  color: #fff;
   text-align: center;
-  padding: 1rem 0;
-  font-size: 1.75rem;
-  letter-spacing: 1px;
+  background-color: #111;
+  color: white;
+  padding: 2rem 1rem 1rem;
+}
+
+header h1 {
+  font-size: 1.8rem;
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 0.9rem;
+  color: #ccc;
+  margin-top: 0.3rem;
 }
 
 main {
-  max-width: 1000px;
+  max-width: 900px;
   margin: 2rem auto;
   padding: 0 1rem;
 }
 
 #controls {
-  margin-bottom: 1.5rem;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 1rem;
+  margin-bottom: 2rem;
 }
 
 #sportSelect {
-  padding: 0.4rem 0.6rem;
+  padding: 0.5rem;
   font-size: 1rem;
-  border-radius: 6px;
-  border: 1px solid #ccc;
 }
 
 .game-card {
-  background-color: #fff;
+  background-color: white;
   border-radius: 12px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-  margin-bottom: 2rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   padding: 1rem 1.25rem;
+  margin-bottom: 2rem;
 }
 
 .game-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid #e5e5e5;
-  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #eee;
   margin-bottom: 1rem;
+  padding-bottom: 0.25rem;
 }
 
 .game-header h2 {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 1.15rem;
 }
 
 .odds-box {
-  margin-bottom: 1.25rem;
+  margin-bottom: 1.5rem;
 }
 
 .odds-box h3 {
+  font-size: 1rem;
   margin-bottom: 0.5rem;
-  font-size: 1.1rem;
-  border-left: 4px solid #0077cc;
-  padding-left: 0.5rem;
-  color: #0077cc;
+  color: #0070cc;
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
+.odds-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
 }
 
-thead {
-  background-color: #f0f0f0;
+.odds-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  align-items: center;
 }
 
-th, td {
-  text-align: center;
-  padding: 0.6rem;
-  border-bottom: 1px solid #e0e0e0;
-  font-size: 0.95rem;
+.odds-row.header {
+  font-weight: bold;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 0.3rem;
+  color: #666;
 }
 
 .diff {
-  font-weight: bold;
+  font-weight: 600;
+  text-align: center;
 }
 
 .diff.positive {
@@ -96,3 +106,4 @@ th, td {
 .diff.negative {
   color: red;
 }
+ 

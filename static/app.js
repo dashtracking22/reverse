@@ -3,7 +3,6 @@ const baseURL = "";
 document.addEventListener("DOMContentLoaded", () => {
   loadSports();
   document.getElementById("sportSelect").addEventListener("change", fetchOdds);
-  document.getElementById("bookmakerSelect").addEventListener("change", fetchOdds);
 });
 
 async function loadSports() {
@@ -28,9 +27,7 @@ async function loadSports() {
 
 async function fetchOdds() {
   const sportKey = document.getElementById("sportSelect").value;
-  const bookmaker = document.getElementById("bookmakerSelect").value;
-
-  const res = await fetch(`${baseURL}/odds/${sportKey}?bookmaker=${bookmaker}`);
+  const res = await fetch(`${baseURL}/odds/${sportKey}`);
   const games = await res.json();
   renderGames(games);
 }
@@ -51,42 +48,53 @@ function renderGames(games) {
     `;
     card.appendChild(header);
 
-    ["moneyline", "spread", "total"].forEach(section => {
-      if (!game[section] || Object.keys(game[section]).length === 0) return;
-
-      const box = document.createElement("div");
-      box.className = "odds-box";
-
-      const title = document.createElement("h3");
-      title.textContent = section.charAt(0).toUpperCase() + section.slice(1);
-      box.appendChild(title);
-
-      const table = document.createElement("table");
-      const thead = document.createElement("thead");
-      thead.innerHTML = `<tr><th>Team</th><th>Open</th><th>Live</th><th>Diff</th></tr>`;
-      table.appendChild(thead);
-
-      const tbody = document.createElement("tbody");
-
-      for (const team in game[section]) {
-        const { open, live, diff } = game[section][team];
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td>${team}</td>
-          <td>${open}</td>
-          <td>${live}</td>
-          <td class="diff ${getDiffClass(diff)}">${diff}</td>
-        `;
-        tbody.appendChild(row);
-      }
-
-      table.appendChild(tbody);
-      box.appendChild(table);
-      card.appendChild(box);
-    });
+    // Render each odds section
+    renderSection(card, "Moneyline", game.moneyline);
+    renderSection(card, "Spread", game.spread);
+    renderSection(card, "Team Total", game.total);
 
     container.appendChild(card);
   });
+}
+
+function renderSection(card, label, data) {
+  if (!data || Object.keys(data).length === 0) return;
+
+  const box = document.createElement("div");
+  box.className = "odds-box";
+
+  const title = document.createElement("h3");
+  title.textContent = label;
+  box.appendChild(title);
+
+  const grid = document.createElement("div");
+  grid.className = "odds-grid";
+
+  const headerRow = document.createElement("div");
+  headerRow.className = "odds-row header";
+  headerRow.innerHTML = `
+    <div>Team</div>
+    <div>Open</div>
+    <div>Live</div>
+    <div>Diff</div>
+  `;
+  grid.appendChild(headerRow);
+
+  for (const team in data) {
+    const { open, live, diff } = data[team];
+    const row = document.createElement("div");
+    row.className = "odds-row";
+    row.innerHTML = `
+      <div>${team}</div>
+      <div>${open}</div>
+      <div>${live}</div>
+      <div class="diff ${getDiffClass(diff)}">${diff}</div>
+    `;
+    grid.appendChild(row);
+  }
+
+  box.appendChild(grid);
+  card.appendChild(box);
 }
 
 function getDiffClass(diff) {
@@ -94,5 +102,7 @@ function getDiffClass(diff) {
     if (diff > 0) return "positive";
     if (diff < 0) return "negative";
   }
+  if (typeof diff === "string" && diff.startsWith("+")) return "positive";
+  if (typeof diff === "string" && diff.startsWith("-")) return "negative";
   return "";
 }
