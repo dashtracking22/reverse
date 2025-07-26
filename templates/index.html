@@ -1,53 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BetKarma Odds Tracker</title>
-  
-  <!-- Google AdSense Script -->
-  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1931379655959689"
-          crossorigin="anonymous"></script>
-
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background-color: #f7f7f7;
-      margin: 0;
-      padding: 0;
-    }
-    .container {
-      max-width: 980px;
-      margin: auto;
-      padding: 20px;
-    }
-    .ad-container {
-      margin-top: 40px;
-      text-align: center;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BetKarma - Live Odds Tracker</title>
+    <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <div class="container">
-    <h1>BetKarma Odds Tracker</h1>
-    <div id="app">
-      <!-- Your app content gets injected here -->
-    </div>
+    <header>
+        <h1>Cash Bros LLC</h1>
+        <div class="controls">
+            <select id="sportSelector"></select>
+            <select id="bookmakerSelector"></select>
+        </div>
+    </header>
 
-    <!-- Google AdSense Display Ad -->
-    <div class="ad-container">
-      <ins class="adsbygoogle"
-           style="display:block; text-align:center;"
-           data-ad-client="ca-pub-1931379655959689"
-           data-ad-slot="1234567890"
-           data-ad-format="auto"
-           data-full-width-responsive="true"></ins>
-      <script>
-           (adsbygoogle = window.adsbygoogle || []).push({});
-      </script>
-    </div>
-  </div>
+    <main id="oddsContainer">
+        <!-- Odds cards will be dynamically inserted here -->
+    </main>
 
-  <script src="/static/app.js"></script>
+    <script src="/static/app.js"></script>
 </body>
 </html>
