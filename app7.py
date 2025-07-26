@@ -11,16 +11,9 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 CORS(app)
 
 API_KEY = os.getenv("API_KEY")
-REDIS_URL = os.getenv("REDIS_URL")
-REDIS_TOKEN = os.getenv("REDIS_TOKEN")
 
-HEADERS = {
-    "Authorization": f"Bearer {REDIS_TOKEN}",
-    "Content-Type": "application/json"
-}
-
-_cache = {}
 CACHE_DURATION = 30  # seconds
+_cache = {}
 
 ALLOWED_SPORTS = [
     "tennis",
@@ -33,25 +26,38 @@ ALLOWED_SPORTS = [
 
 MARKETS = ["h2h", "spreads", "totals"]
 
-def save_opening_line(key, value):
-    url = f"{REDIS_URL}/set/{key}"
+
+def get_redis_credentials(redis_env):
+    if redis_env == "REDIS_CODE":
+        redis_url = os.getenv("REDIS_CODE_URL")
+        redis_token = os.getenv("REDIS_CODE_TOKEN")
+    else:
+        redis_url = os.getenv("REDIS_URL")
+        redis_token = os.getenv("REDIS_TOKEN")
+    return redis_url, redis_token
+
+
+def save_opening_line(redis_url, headers, key, value):
+    url = f"{redis_url}/set/{key}"
     payload = json.dumps({"value": value})
     try:
-        res = requests.post(url, headers=HEADERS, data=payload)
+        res = requests.post(url, headers=headers, data=payload)
         print(f"[Redis SET] {key} = {value} → {res.status_code}")
     except Exception as e:
         print("[Redis save error]", e)
 
-def batch_get_opening_lines(keys):
-    url = f"{REDIS_URL}/mget"
+
+def batch_get_opening_lines(redis_url, headers, keys):
+    url = f"{redis_url}/mget"
     try:
         payload = json.dumps(keys)
-        res = requests.post(url, headers=HEADERS, data=payload)
+        res = requests.post(url, headers=headers, data=payload)
         if res.status_code == 200:
             return res.json().get("result", [])
     except Exception as e:
         print("[Redis batch get error]", e)
     return [None] * len(keys)
+
 
 def to_american(decimal):
     try:
@@ -64,6 +70,7 @@ def to_american(decimal):
         pass
     return None
 
+
 def get_sports_cached():
     now = time.time()
     if "sports" in _cache and now - _cache["sports"]["time"] < CACHE_DURATION:
@@ -75,6 +82,7 @@ def get_sports_cached():
         _cache["sports"] = {"time": now, "data": res.json()}
         return _cache["sports"]["data"]
     return []
+
 
 def get_odds_cached(sport, bookmaker, markets):
     now = time.time()
@@ -94,9 +102,11 @@ def get_odds_cached(sport, bookmaker, markets):
         print(f"[ODDS API ERROR] {res.status_code} {res.text}")
         return None
 
+
 @app.route("/")
 def home():
     return render_template("index.html")
+
 
 @app.route("/sports")
 def sports():
@@ -104,11 +114,23 @@ def sports():
     filtered = [s for s in data if s["key"] in ALLOWED_SPORTS]
     return jsonify(filtered)
 
+
 @app.route("/odds/<sport>")
 def odds(sport):
     bookmaker = request.args.get("bookmaker", "betonlineag")
+    redis_env = request.args.get("redis_env", os.getenv("REDIS_ENV", "REDIS"))
+
     if sport not in ALLOWED_SPORTS:
         return jsonify({"error": "Sport not supported"}), 400
+
+    redis_url, redis_token = get_redis_credentials(redis_env)
+    if not redis_url or not redis_token:
+        return jsonify({"error": "Redis credentials not configured properly"}), 500
+
+    headers = {
+        "Authorization": f"Bearer {redis_token}",
+        "Content-Type": "application/json"
+    }
 
     data = get_odds_cached(sport, bookmaker, MARKETS)
     if data is None:
@@ -117,10 +139,7 @@ def odds(sport):
     eastern = pytz.timezone("US/Eastern")
     results = []
 
-    # Collect all Redis keys for opening odds and points
     redis_keys = []
-
-    # Map to remember which key belongs to which outcome
     key_to_info = {}
 
     for game in data:
@@ -139,13 +158,9 @@ def odds(sport):
                     key_to_info[key_odds] = (game, bm, market, outcome)
                     key_to_info[key_point] = (game, bm, market, outcome)
 
-    # Batch fetch all opening odds and points
-    redis_results = batch_get_opening_lines(redis_keys)
-
-    # Build dict for quick lookup
+    redis_results = batch_get_opening_lines(redis_url, headers, redis_keys)
     redis_values = dict(zip(redis_keys, redis_results))
 
-    # Process games now with Redis data
     for game in data:
         matchup = f"{game['home_team']} vs {game['away_team']}"
         start_time = datetime.fromisoformat(game['commence_time'].replace("Z", "+00:00")).astimezone(eastern)
@@ -178,24 +193,30 @@ def odds(sport):
                     if open_odds_raw:
                         try:
                             open_odds = float(json.loads(open_odds_raw).get("value"))
+                            print(f"[DEBUG] Existing opening odds for {odds_key}: {open_odds}")
                         except Exception as e:
-                            print("Error parsing open_odds JSON:", e)
+                            print(f"[DEBUG] Error parsing open_odds for {odds_key}: {e}")
 
                     if open_point_raw:
                         try:
                             open_point = float(json.loads(open_point_raw).get("value"))
+                            print(f"[DEBUG] Existing opening point for {point_key}: {open_point}")
                         except Exception as e:
-                            print("Error parsing open_point JSON:", e)
+                            print(f"[DEBUG] Error parsing open_point for {point_key}: {e}")
 
-                    # Save opening odds if missing
                     if open_odds is None and live_decimal is not None:
-                        save_opening_line(odds_key, live_decimal)
+                        print(f"[DEBUG] Saving opening odds for {odds_key}: {live_decimal}")
+                        save_opening_line(redis_url, headers, odds_key, live_decimal)
                         open_odds = live_decimal
+                    else:
+                        print(f"[DEBUG] Using existing opening odds for {odds_key}: {open_odds}")
 
-                    # Save opening point if missing and point exists (for spreads/totals)
                     if open_point is None and point is not None:
-                        save_opening_line(point_key, point)
+                        print(f"[DEBUG] Saving opening point for {point_key}: {point}")
+                        save_opening_line(redis_url, headers, point_key, point)
                         open_point = point
+                    else:
+                        print(f"[DEBUG] Using existing opening point for {point_key}: {open_point}")
 
                     diff = "+0"
 
@@ -247,6 +268,7 @@ def odds(sport):
         })
 
     return jsonify(results)
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=5050)
