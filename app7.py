@@ -10,7 +10,8 @@ from urllib.parse import urlparse
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
-Talisman(app, force_https=False)
+# ✅ Disable CSP so Google Ads and other scripts can load
+Talisman(app, force_https=False, content_security_policy=None)
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["100/hour"])
 limiter.init_app(app)
@@ -171,3 +172,4 @@ def get_odds(sport):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5050))
     app.run(host="0.0.0.0", port=port)
+
