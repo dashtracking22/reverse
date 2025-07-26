@@ -1,38 +1,35 @@
-from flask import Flask, jsonify
-from flask_cors import CORS
+import os
+import json
 import requests
+from flask import Flask, jsonify
 
 app = Flask(__name__)
-CORS(app)
 
-API_KEY = "e9cb3bfd5865b71161c903d24911b88d"
+redis_url = os.getenv("REDIS_URL")
+redis_token = os.getenv("REDIS_TOKEN")
 
-@app.route("/odds/<sport>")
-def get_odds(sport):
-    url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds/?regions=us&markets=h2h&bookmakers=betonlineag&apiKey={API_KEY}"
+headers = {
+    "Authorization": f"Bearer {redis_token}",
+    "Content-Type": "application/json"
+}
+
+@app.route("/test")
+def test_redis():
+    test_key = "test_key"
+    test_value = "hello from test"
     try:
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
-
-        print(f"\n✅ RAW ODDS for {sport}:")
-        print(data)
-
-        return jsonify(data)
+        # Try setting a key in Redis
+        set_resp = requests.post(f"{redis_url}/set/{test_key}", headers=headers, data=json.dumps({"value": test_value}))
+        # Try retrieving the key
+        get_resp = requests.post(f"{redis_url}/mget", headers=headers, data=json.dumps([test_key]))
+        return jsonify({
+            "set_status": set_resp.status_code,
+            "set_response": set_resp.text,
+            "get_status": get_resp.status_code,
+            "get_response": get_resp.text,
+        })
     except Exception as e:
-        print(f"❌ Error fetching odds for {sport}: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/sports")
-def get_sports():
-    url = f"https://api.the-odds-api.com/v4/sports/?apiKey={API_KEY}"
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        return jsonify(response.json())
-    except Exception as e:
-        print(f"❌ Error fetching sports: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5050)
+    app.run(host="0.0.0.0", port=5050, debug=True)
