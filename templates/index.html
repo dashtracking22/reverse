@@ -1,24 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BetKarma - Live Odds Tracker</title>
-    <link rel="stylesheet" href="/static/styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BetKarma - Reverse Tracker</title>
+  <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
-    <header>
-        <h1>Cash Bros LLC</h1>
-        <div class="controls">
-            <select id="sportSelector"></select>
-            <select id="bookmakerSelector"></select>
-        </div>
-    </header>
+  <header>
+    <h1>Cash Bros LLC</h1>
+  </header>
 
-    <main id="oddsContainer">
-        <!-- Odds cards will be dynamically inserted here -->
-    </main>
+  <main>
+    <label for="sport-select">Select a Sport:</label>
+    <select id="sport-select">
+      <option value="">-- Choose a sport --</option>
+    </select>
 
-    <script src="/static/app.js"></script>
+    <div id="games-container"></div>
+  </main>
+
+  <script src="/static/app.js"></script>
 </body>
 </html>

@@ -1,61 +1,52 @@
 body {
   font-family: Arial, sans-serif;
-  background-color: #f2f2f2;
+  margin: 20px;
+  background: #f4f4f4;
+  color: #333;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+h1 {
+  font-size: 2em;
   margin: 0;
-  padding: 0;
 }
 
-.container {
-  max-width: 1000px;
-  margin: 20px auto;
-  padding: 10px;
+select {
+  padding: 8px;
+  font-size: 1em;
 }
 
-.card {
+.game-card {
   background: white;
-  border-radius: 8px;
-  box-shadow: 0 0 10px rgba(0,0,0,0.1);
-  margin-bottom: 20px;
+  border: 1px solid #ddd;
   padding: 15px;
-}
-
-.card h3 {
-  margin-top: 0;
+  margin-top: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .section {
   margin-top: 10px;
 }
 
-.section h4 {
+.section h3 {
   margin-bottom: 5px;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-  font-size: 14px;
-  text-align: center;
-}
-
-.grid-header {
-  font-weight: bold;
-  background-color: #eee;
-  padding: 5px;
-}
-
-.grid-cell {
-  padding: 5px;
+.odds-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
 }
 
 .diff-positive {
   color: green;
-  font-weight: bold;
 }
 
 .diff-negative {
   color: red;
-  font-weight: bold;
 }
-
