@@ -19,7 +19,4 @@ env/
 .env
 *.env
 
-# Local logs (don’t version)
-odds_log.json
-opening_odds.json
 
