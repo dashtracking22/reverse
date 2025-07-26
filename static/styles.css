@@ -1,0 +1,61 @@
+body {
+  font-family: Arial, sans-serif;
+  background-color: #f2f2f2;
+  margin: 0;
+  padding: 0;
+}
+
+.container {
+  max-width: 1000px;
+  margin: 20px auto;
+  padding: 10px;
+}
+
+.card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  margin-bottom: 20px;
+  padding: 15px;
+}
+
+.card h3 {
+  margin-top: 0;
+}
+
+.section {
+  margin-top: 10px;
+}
+
+.section h4 {
+  margin-bottom: 5px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  font-size: 14px;
+  text-align: center;
+}
+
+.grid-header {
+  font-weight: bold;
+  background-color: #eee;
+  padding: 5px;
+}
+
+.grid-cell {
+  padding: 5px;
+}
+
+.diff-positive {
+  color: green;
+  font-weight: bold;
+}
+
+.diff-negative {
+  color: red;
+  font-weight: bold;
+}
+
