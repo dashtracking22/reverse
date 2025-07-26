@@ -1,5 +1,5 @@
 import time
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 import requests
 import os
@@ -7,7 +7,7 @@ from datetime import datetime
 import pytz
 import json
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates", static_folder="static")
 CORS(app)
 
 API_KEY = os.getenv("API_KEY")
@@ -104,9 +104,53 @@ def get_odds_cached(sport, bookmaker, markets):
         return None
 
 
+### Redis test helpers ###
+
+redis_url, redis_token = get_redis_credentials()
+redis_headers = {
+    "Authorization": f"Bearer {redis_token}",
+    "Content-Type": "application/json"
+}
+
+
+def redis_set(key, value):
+    url = f"{redis_url}/set/{key}"
+    payload = json.dumps({"value": value})
+    try:
+        res = requests.post(url, headers=redis_headers, data=payload)
+        return res.status_code, res.text
+    except Exception as e:
+        return 500, str(e)
+
+
+def redis_get(key):
+    url = f"{redis_url}/get/{key}"
+    try:
+        res = requests.get(url, headers=redis_headers)
+        return res.status_code, res.text
+    except Exception as e:
+        return 500, str(e)
+
+
+@app.route("/test_redis")
+def test_redis():
+    test_key = "test_key"
+    test_value = "hello from redis"
+    
+    set_status, set_resp = redis_set(test_key, test_value)
+    get_status, get_resp = redis_get(test_key)
+    
+    return jsonify({
+        "set_status": set_status,
+        "set_response": set_resp,
+        "get_status": get_status,
+        "get_response": get_resp,
+    })
+
+
 @app.route("/")
 def home():
-    return "BetKarma Redis Test App is running"
+    return "BetKarma Redis Test App is running."
 
 
 @app.route("/sports")
@@ -123,14 +167,8 @@ def odds(sport):
     if sport not in ALLOWED_SPORTS:
         return jsonify({"error": "Sport not supported"}), 400
 
-    redis_url, redis_token = get_redis_credentials()
     if not redis_url or not redis_token:
         return jsonify({"error": "Redis credentials not configured properly"}), 500
-
-    headers = {
-        "Authorization": f"Bearer {redis_token}",
-        "Content-Type": "application/json"
-    }
 
     data = get_odds_cached(sport, bookmaker, MARKETS)
     if data is None:
@@ -158,7 +196,7 @@ def odds(sport):
                     key_to_info[key_odds] = (game, bm, market, outcome)
                     key_to_info[key_point] = (game, bm, market, outcome)
 
-    redis_results = batch_get_opening_lines(redis_url, headers, redis_keys)
+    redis_results = batch_get_opening_lines(redis_url, redis_headers, redis_keys)
     redis_values = dict(zip(redis_keys, redis_results))
 
     for game in data:
@@ -203,11 +241,11 @@ def odds(sport):
                             pass
 
                     if open_odds is None and live_decimal is not None:
-                        save_opening_line(redis_url, headers, odds_key, live_decimal)
+                        save_opening_line(redis_url, redis_headers, odds_key, live_decimal)
                         open_odds = live_decimal
 
                     if open_point is None and point is not None:
-                        save_opening_line(redis_url, headers, point_key, point)
+                        save_opening_line(redis_url, redis_headers, point_key, point)
                         open_point = point
 
                     diff = "+0"
@@ -263,5 +301,4 @@ def odds(sport):
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5050))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(debug=True, host="0.0.0.0", port=5050)
