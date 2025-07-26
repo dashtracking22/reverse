@@ -2,16 +2,29 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>MMA Odds – DraftKings</title>
+  <title>Multi-Sport Odds Tracker</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
   <header>
-    <h1>MMA Odds – DraftKings</h1>
-    <p class="subtitle">Redis-powered opening line tracker</p>
+    <h1>Multi-Sport Odds Tracker</h1>
+    <p class="subtitle">Powered by Cash Bros LLC.</p>
   </header>
 
   <main>
+    <section id="controls">
+      <label for="sportSelect">Choose a sport:</label>
+      <select id="sportSelect"></select>
+
+      <label for="bookmakerSelect">Choose a bookmaker:</label>
+      <select id="bookmakerSelect">
+        <option value="betonlineag" selected>BetOnlineAG</option>
+        <option value="draftkings">DraftKings</option>
+        <option value="fanduel">FanDuel</option>
+        <option value="pointsbetus">PointsBet US</option>
+      </select>
+    </section>
+
     <section id="gamesContainer"></section>
   </main>
 

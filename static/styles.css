@@ -30,6 +30,27 @@ main {
   padding: 0 1rem;
 }
 
+#controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: center;
+  margin-bottom: 2rem;
+  align-items: center;
+}
+
+#controls label {
+  font-weight: 600;
+}
+
+#sportSelect, #bookmakerSelect {
+  padding: 0.5rem;
+  font-size: 1rem;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  min-width: 180px;
+}
+
 .game-card {
   background-color: white;
   border-radius: 12px;
@@ -46,23 +67,51 @@ main {
   padding-bottom: 0.25rem;
 }
 
-.odds-box table {
-  width: 100%;
-  border-collapse: collapse;
+.game-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
 }
 
-.odds-box th, .odds-box td {
-  padding: 0.5rem;
-  border: 1px solid #ddd;
+.odds-box {
+  margin-bottom: 1.5rem;
+}
+
+.odds-box h3 {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+  color: #0070cc;
+}
+
+.odds-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.odds-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  align-items: center;
+}
+
+.odds-row.header {
+  font-weight: bold;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 0.3rem;
+  color: #666;
+}
+
+.diff {
+  font-weight: 600;
   text-align: center;
 }
 
 .diff.positive {
   color: green;
-  font-weight: bold;
 }
 
 .diff.negative {
   color: red;
-  font-weight: bold;
 }
