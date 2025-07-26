@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template
 from flask_cors import CORS
 import requests
 import os
@@ -6,7 +6,7 @@ import pytz
 from datetime import datetime
 import json
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates", static_folder="static")
 CORS(app)
 
 API_KEY = os.getenv("API_KEY")
@@ -19,7 +19,7 @@ HEADERS = {
 }
 
 MARKETS = ["h2h", "spreads", "totals"]
-BOOKMAKER = "betonlineag"  # Hardcoded to simplify
+BOOKMAKER = "betonlineag"
 
 def save_opening_line(key, value):
     url = f"{REDIS_URL}/set/{key}"
@@ -43,6 +43,10 @@ def to_american(decimal):
             return f"-{int(100 / (decimal - 1))}"
     except:
         return None
+
+@app.route("/")
+def home():
+    return render_template("index.html")
 
 @app.route("/sports")
 def sports():
@@ -87,7 +91,7 @@ def odds(sport):
                 continue
 
             for market in bm["markets"]:
-                label = market["key"]  # h2h, spreads, totals
+                label = market["key"]
 
                 for outcome in market["outcomes"]:
                     team = outcome.get("name")
@@ -100,12 +104,12 @@ def odds(sport):
                         if not open_val and decimal:
                             save_opening_line(key, decimal)
                             open_val = decimal
-                        diff = round((float(decimal) - float(open_val)), 2) if open_val else None
+                        diff = f"{int((float(decimal) - float(open_val)) * 100):+}" if open_val else "+0"
 
                         game_data["moneyline"][team] = {
                             "open": to_american(open_val),
                             "live": to_american(decimal),
-                            "diff": f"{int((decimal - float(open_val)) * 100)}" if open_val else "+0"
+                            "diff": diff
                         }
 
                     elif label == "spreads":
