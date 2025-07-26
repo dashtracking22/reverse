@@ -6,6 +6,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import requests, json, pytz, redis
 from datetime import datetime
+from urllib.parse import urlparse
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -38,7 +39,8 @@ SPORTS = [
 ]
 
 # Redis setup using Render environment variables
-redis_host = os.getenv('REDIS_HOST')
+parsed = urlparse(os.getenv('REDIS_HOST', ''))
+redis_host = parsed.hostname
 redis_port = int(os.getenv('REDIS_PORT', 6379))
 redis_password = os.getenv('REDIS_PASSWORD')
 
@@ -165,36 +167,6 @@ def get_odds(sport):
     except Exception as e:
         print(f"❌ Error fetching odds for {sport}@{bookmaker}: {e}")
         return jsonify({"error": str(e)}), 500
-
-@app.route("/debug/redis/<sport>")
-def debug_redis(sport):
-    try:
-        data = {
-            "REDIS_HOST": redis_host,
-            "REDIS_PORT": redis_port,
-            "REDIS_PASSWORD_SET": bool(redis_password)
-        }
-        keys = redis_client.keys(f"opening_odds:{sport}:*")
-        for k in keys:
-            key_str = k.decode() if isinstance(k, bytes) else str(k)
-            try:
-                val = redis_client.get(k)
-                val_str = val.decode() if isinstance(val, bytes) else str(val)
-                data[key_str] = json.loads(val_str)
-            except Exception as inner_err:
-                data[key_str] = f"[Error loading value: {inner_err}]"
-        return jsonify(data)
-    except Exception as outer_err:
-        return jsonify({"error": f"Redis debug route failed: {outer_err}"}), 500
-
-@app.route("/debug/env")
-def debug_env():
-    return jsonify({
-        "REDIS_HOST": os.getenv("REDIS_HOST"),
-        "REDIS_PORT": os.getenv("REDIS_PORT"),
-        "REDIS_PASSWORD_SET": bool(os.getenv("REDIS_PASSWORD")),
-        "ALL_ENV_KEYS": list(os.environ.keys())
-    })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5050))
