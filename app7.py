@@ -17,7 +17,6 @@ redis = Redis(
 )
 
 API_KEY = os.environ.get("THE_ODDS_API_KEY")
-DEFAULT_BOOKMAKER = "betonlineag"
 
 @app.route('/')
 def serve_index():
@@ -33,9 +32,16 @@ def get_sports():
         "americanfootball_ncaaf"
     ])
 
-@app.route('/odds/<sport>')
-def get_odds(sport):
-    bookmaker = request.args.get("bookmaker", DEFAULT_BOOKMAKER)
+@app.route('/bookmakers')
+def get_bookmakers():
+    return jsonify([
+        "betonlineag",
+        "draftkings",
+        "fanduel"
+    ])
+
+@app.route('/odds/<sport>/<bookmaker>')
+def get_odds(sport, bookmaker):
     url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds/?regions=us&markets=h2h,spreads,totals&bookmakers={bookmaker}&apiKey={API_KEY}"
     try:
         response = requests.get(url)
@@ -45,9 +51,9 @@ def get_odds(sport):
 
     result = []
     for game in games:
-        game_id = f"{sport}:{game['home_team']} vs {game['away_team']}"
+        game_id = f"{sport}:{bookmaker}:{game['home_team']} vs {game['away_team']}"
         timestamp = game.get('commence_time', '')
-        est_time = datetime.fromisoformat(timestamp.replace("Z", "+00:00")).strftime("%m/%d %I:%M %p") if timestamp else ""
+        est_time = datetime.fromisoformat(timestamp.replace("Z", "+00:00")).strftime("%m/%d, %I:%M %p ET") if timestamp else ""
 
         entry = {
             "matchup": f"{game['away_team']} vs {game['home_team']}",
@@ -60,9 +66,7 @@ def get_odds(sport):
         for market in game.get('bookmakers', [])[0].get('markets', []):
             if market['key'] == 'h2h':
                 for outcome in market['outcomes']:
-                    entry['moneyline'][outcome['name']] = {
-                        "price": outcome['price']
-                    }
+                    entry['moneyline'][outcome['name']] = { "price": outcome['price'] }
             elif market['key'] == 'spreads':
                 for outcome in market['outcomes']:
                     entry['spread'][outcome['name']] = {
@@ -76,7 +80,7 @@ def get_odds(sport):
                         "price": outcome.get('price')
                     }
 
-        key = f"opening_odds:{game_id}:{bookmaker}"
+        key = f"opening_odds:{game_id}"
         if not redis.exists(key):
             redis.set(key, json.dumps(entry))
 
