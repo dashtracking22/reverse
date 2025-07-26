@@ -4,20 +4,16 @@ from flask_cors import CORS
 from flask_talisman import Talisman
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-import requests, json, pytz
+import requests, json, pytz, redis
 from datetime import datetime
 
-# point Flask at your lowercase templates/ and static/ folders
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
-# strict CSP, but skip HTTP→HTTPS redirects locally
 Talisman(app, force_https=False)
 
-# rate limiting (100 calls/hour per IP)
 limiter = Limiter(key_func=get_remote_address, default_limits=["100/hour"])
 limiter.init_app(app)
 
-# CORS – restrict to your domains
 CORS(app, origins=[
     "https://reversetracking.onrender.com",
     "https://www.yourdomain.com"
@@ -26,7 +22,6 @@ CORS(app, origins=[
 API_KEY           = os.getenv("THE_ODDS_API_KEY")
 DEFAULT_BOOKMAKER = "draftkings"
 MARKETS           = ["h2h", "spreads", "totals"]
-ODDS_LOG_FILE     = "odds_log.json"
 
 BOOKMAKERS = [
     {"key": "betonlineag", "title": "BetOnlineAg"},
@@ -42,17 +37,13 @@ SPORTS = [
     {"key": "americanfootball_ncaaf", "title": "NCAAF"}
 ]
 
-def load_odds_log():
-    if os.path.exists(ODDS_LOG_FILE):
-        try:
-            return json.load(open(ODDS_LOG_FILE))
-        except json.JSONDecodeError:
-            return {}
-    return {}
-
-def save_odds_log(log):
-    with open(ODDS_LOG_FILE, "w") as f:
-        json.dump(log, f, indent=2)
+# Redis setup using Render environment variables
+redis_client = redis.Redis(
+    host=os.getenv('REDIS_HOST'),
+    port=int(os.getenv('REDIS_PORT', 6379)),
+    password=os.getenv('REDIS_PASSWORD'),
+    ssl=True
+)
 
 def decimal_to_american(d):
     if d >= 2.0:
@@ -77,7 +68,6 @@ def get_odds(sport):
         return jsonify({"error": "Missing THE_ODDS_API_KEY"}), 500
 
     bookmaker = request.args.get("bookmaker", DEFAULT_BOOKMAKER)
-    odds_log  = load_odds_log()
 
     url = (
         f"https://api.the-odds-api.com/v4/sports/{sport}/odds"
@@ -86,9 +76,9 @@ def get_odds(sport):
     )
 
     try:
-        resp    = requests.get(url)
+        resp = requests.get(url)
         resp.raise_for_status()
-        data    = resp.json()
+        data = resp.json()
         results = []
 
         for game in data:
@@ -101,57 +91,60 @@ def get_odds(sport):
             kickoff = dt.replace(tzinfo=pytz.utc).astimezone(pytz.timezone("US/Eastern"))
             kickoff_str = kickoff.strftime("%m/%d %I:%M %p")
 
-            odds_log.setdefault(sport, {}).setdefault(matchup, {})
-            all_markets = {}
+            redis_key = f"opening_odds:{sport}:{matchup}"
+            stored_data = redis_client.get(redis_key)
 
+            all_markets = {}
             bk_data = next((b for b in game.get("bookmakers", []) if b["key"] == bookmaker), None)
             if not bk_data:
                 continue
 
+            current_odds = {}
             for m in bk_data.get("markets", []):
                 key = m["key"]
-                name = ("moneyline" if key=="h2h"
-                        else "spread"  if key=="spreads"
-                        else "total"   if key=="totals"
+                name = ("moneyline" if key == "h2h"
+                        else "spread" if key == "spreads"
+                        else "total" if key == "totals"
                         else None)
                 if not name:
                     continue
 
                 curr_price = {o["name"]: decimal_to_american(o["price"])
-                              for o in m.get("outcomes", []) if o.get("price") is not None}
+                              for o in m.get("outcomes", []) if o.get("price")}
                 curr_point = {o["name"]: o["point"]
-                              for o in m.get("outcomes", []) if o.get("point") is not None}
+                              for o in m.get("outcomes", []) if o.get("point")}
 
-                log_entry = odds_log[sport][matchup].setdefault(name, {"price": {}, "points": {}})
-                if not log_entry["price"]:
-                    log_entry["price"].update(curr_price)
-                    log_entry["points"].update(curr_point)
+                current_odds[name] = {"price": curr_price, "points": curr_point}
 
-                opening_price  = log_entry["price"]
-                opening_points = log_entry["points"]
+            if stored_data:
+                opening_odds = json.loads(stored_data)
+            else:
+                opening_odds = current_odds
+                redis_client.set(redis_key, json.dumps(opening_odds))
 
-                diffs = {}
-                for team in curr_price:
-                    if name == "moneyline" and team in opening_price:
-                        diffs[team] = int(curr_price[team]) - int(opening_price[team])
-                    elif name in ("spread","total") and team in opening_points:
-                        diffs[team] = round(curr_point[team] - opening_points[team], 1)
+            diffs = {}
+            for market in current_odds:
+                diffs[market] = {}
+                for team in current_odds[market]["price"]:
+                    if market == "moneyline":
+                        diffs[market][team] = int(current_odds[market]["price"][team]) - int(opening_odds[market]["price"][team])
+                    else:
+                        diffs[market][team] = round(current_odds[market]["points"][team] - opening_odds[market]["points"][team], 1)
 
-                all_markets[name] = {
-                    "opening": {"price": opening_price, "points": opening_points},
-                    "current": {"price": curr_price,    "points": curr_point},
-                    "diff":    diffs
+                all_markets[market] = {
+                    "opening": opening_odds[market],
+                    "current": current_odds[market],
+                    "diff": diffs[market]
                 }
 
             results.append({
                 "matchup": matchup,
                 "commence_time_est": kickoff_str,
                 "moneyline": all_markets.get("moneyline", {}),
-                "spread":    all_markets.get("spread",    {}),
-                "total":     all_markets.get("total",     {})
+                "spread": all_markets.get("spread", {}),
+                "total": all_markets.get("total", {})
             })
 
-        save_odds_log(odds_log)
         return jsonify(results)
 
     except Exception as e:
