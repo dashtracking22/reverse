@@ -92,8 +92,6 @@ def get_odds(sport):
             kickoff_str = kickoff.strftime("%m/%d %I:%M %p")
 
             redis_key = f"opening_odds:{sport}:{matchup}"
-            stored_data = redis_client.get(redis_key)
-
             all_markets = {}
             bk_data = next((b for b in game.get("bookmakers", []) if b["key"] == bookmaker), None)
             if not bk_data:
@@ -116,20 +114,24 @@ def get_odds(sport):
 
                 current_odds[name] = {"price": curr_price, "points": curr_point}
 
-            if stored_data:
-                opening_odds = json.loads(stored_data)
-            else:
-                opening_odds = current_odds
-                redis_client.set(redis_key, json.dumps(opening_odds))
+            # Load or initialize opening odds from Redis
+            try:
+                stored_data = redis_client.get(redis_key)
+                opening_odds = json.loads(stored_data) if stored_data else current_odds
+                if not stored_data:
+                    redis_client.set(redis_key, json.dumps(opening_odds))
+            except Exception as e:
+                print(f"⚠️ Redis data error for {matchup}: {e}. Skipping this game to protect opening odds.")
+                continue
 
             diffs = {}
             for market in current_odds:
                 diffs[market] = {}
                 for team in current_odds[market]["price"]:
                     if market == "moneyline":
-                        diffs[market][team] = int(current_odds[market]["price"][team]) - int(opening_odds[market]["price"][team])
+                        diffs[market][team] = int(current_odds[market]["price"][team]) - int(opening_odds[market]["price"].get(team, 0))
                     else:
-                        diffs[market][team] = round(current_odds[market]["points"][team] - opening_odds[market]["points"][team], 1)
+                        diffs[market][team] = round(current_odds[market]["points"][team] - opening_odds[market]["points"].get(team, 0), 1)
 
                 all_markets[market] = {
                     "opening": opening_odds[market],
