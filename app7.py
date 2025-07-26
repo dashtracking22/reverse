@@ -165,3 +165,14 @@ def get_odds(sport):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5050))
     app.run(host="0.0.0.0", port=port)
+@app.route("/debug/redis/<sport>")
+def debug_redis(sport):
+    keys = redis_client.keys(f"opening_odds:{sport}:*")
+    data = {}
+    for k in keys:
+        try:
+            val = redis_client.get(k)
+            data[k.decode()] = json.loads(val)
+        except Exception as e:
+            data[k.decode()] = f"[Error loading value: {e}]"
+    return jsonify(data)
