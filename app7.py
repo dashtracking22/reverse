@@ -102,7 +102,16 @@ def odds():
                     live_decimal = outcome.get("price")
                     open_key = f"{SPORT}:{game['id']}:moneyline:{team}:open"
 
-                    open_decimal = get_opening_line(open_key)
+                    open_decimal_raw = get_opening_line(open_key)
+                    open_decimal = None
+                    if open_decimal_raw:
+                        try:
+                            open_decimal = json.loads(open_decimal_raw).get("value")
+                        except Exception as e:
+                            print("Error parsing open_decimal JSON:", e)
+                            open_decimal = None
+
+                    # If no open odds saved, save the live odds as open odds
                     if not open_decimal and live_decimal:
                         save_opening_line(open_key, live_decimal)
                         open_decimal = live_decimal
