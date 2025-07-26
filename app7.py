@@ -114,30 +114,39 @@ def get_odds(sport):
 
                 current_odds[name] = {"price": curr_price, "points": curr_point}
 
-            # Load or initialize opening odds from Redis
+            # Try to load saved opening odds, or save for first time
+            opening_odds = {}
             try:
                 stored_data = redis_client.get(redis_key)
-                opening_odds = json.loads(stored_data) if stored_data else current_odds
-                if not stored_data:
-                    redis_client.set(redis_key, json.dumps(opening_odds))
+                if stored_data:
+                    opening_odds = json.loads(stored_data)
+                else:
+                    redis_client.set(redis_key, json.dumps(current_odds))
+                    opening_odds = current_odds
             except Exception as e:
-                print(f"⚠️ Redis data error for {matchup}: {e}. Skipping this game to protect opening odds.")
-                continue
+                print(f"⚠️ Redis error for {matchup}: {e}")
+                opening_odds = current_odds
 
             diffs = {}
             for market in current_odds:
-                diffs[market] = {}
-                for team in current_odds[market]["price"]:
-                    if market == "moneyline":
-                        diffs[market][team] = int(current_odds[market]["price"][team]) - int(opening_odds[market]["price"].get(team, 0))
-                    else:
-                        diffs[market][team] = round(current_odds[market]["points"][team] - opening_odds[market]["points"].get(team, 0), 1)
+                try:
+                    diffs[market] = {}
+                    open_price = opening_odds.get(market, {}).get("price", {})
+                    open_point = opening_odds.get(market, {}).get("points", {})
+                    for team in current_odds[market]["price"]:
+                        if market == "moneyline":
+                            diffs[market][team] = int(current_odds[market]["price"][team]) - int(open_price.get(team, 0))
+                        else:
+                            diffs[market][team] = round(current_odds[market]["points"][team] - open_point.get(team, 0), 1)
 
-                all_markets[market] = {
-                    "opening": opening_odds[market],
-                    "current": current_odds[market],
-                    "diff": diffs[market]
-                }
+                    all_markets[market] = {
+                        "opening": opening_odds.get(market, {}),
+                        "current": current_odds[market],
+                        "diff": diffs[market]
+                    }
+                except Exception as e:
+                    print(f"⚠️ Skipping market {market} in {matchup} due to error: {e}")
+                    continue
 
             results.append({
                 "matchup": matchup,
