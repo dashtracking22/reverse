@@ -12,7 +12,7 @@ CORS(app)
 
 API_KEY = os.getenv("API_KEY")
 
-CACHE_DURATION = 30  # seconds
+CACHE_DURATION = 30  # seconds cache for API calls
 _cache = {}
 
 ALLOWED_SPORTS = [
@@ -39,13 +39,18 @@ def get_redis_credentials():
 
 
 def save_opening_line(redis_url, headers, key, value):
-    url = f"{redis_url}/set/{key}"
+    # Save only if key doesn't exist
+    # Upstash REST API supports NX param to set only if key does not exist: ?nx=true
+    url = f"{redis_url}/set/{key}?nx=true"
     payload = json.dumps({"value": value})
     try:
         res = requests.post(url, headers=headers, data=payload)
-        print(f"[Redis SET] {key} = {value} → {res.status_code}")
+        # 200 means success, 409 or empty means key exists already (set only if not exists)
+        print(f"[Redis SET] {key} = {value} → {res.status_code} {res.text}")
+        return res.status_code == 200
     except Exception as e:
         print("[Redis save error]", e)
+        return False
 
 
 def batch_get_opening_lines(redis_url, headers, keys):
@@ -139,10 +144,8 @@ def odds(sport):
     eastern = pytz.timezone("US/Eastern")
     results = []
 
+    # Prepare Redis keys for batch fetching opening odds/points
     redis_keys = []
-    key_to_info = {}
-
-    # Prepare redis keys for batch fetch
     for game in data:
         for bm in game["bookmakers"]:
             if bm["key"] != bookmaker:
@@ -181,38 +184,43 @@ def odds(sport):
                     odds_key = f"{sport}:{game['id']}:{market['key']}:{team}:open_odds"
                     point_key = f"{sport}:{game['id']}:{market['key']}:{team}:open_point"
 
+                    open_odds_raw = redis_values.get(odds_key)
+                    open_point_raw = redis_values.get(point_key)
+
                     open_odds = None
                     open_point = None
 
-                    # Parse existing opening odds from Redis
-                    open_odds_raw = redis_values.get(odds_key)
+                    # Try to parse stored opening odds and points from Redis JSON
                     if open_odds_raw:
                         try:
                             open_odds = float(json.loads(open_odds_raw).get("value"))
-                        except Exception:
-                            open_odds = None
+                        except Exception as e:
+                            print(f"[DEBUG] Error parsing open_odds for {odds_key}: {e}")
 
-                    # Parse existing opening point from Redis
-                    open_point_raw = redis_values.get(point_key)
                     if open_point_raw:
                         try:
                             open_point = float(json.loads(open_point_raw).get("value"))
-                        except Exception:
-                            open_point = None
+                        except Exception as e:
+                            print(f"[DEBUG] Error parsing open_point for {point_key}: {e}")
 
-                    # Save opening odds if missing
+                    # Save opening odds ONLY if none already stored
                     if open_odds is None and live_decimal is not None:
+                        print(f"[DEBUG] Saving opening odds for {odds_key}: {live_decimal}")
                         save_opening_line(redis_url, headers, odds_key, live_decimal)
                         open_odds = live_decimal
+                    else:
+                        print(f"[DEBUG] Using existing opening odds for {odds_key}: {open_odds}")
 
-                    # Save opening point if missing
+                    # Save opening point ONLY if none already stored
                     if open_point is None and point is not None:
+                        print(f"[DEBUG] Saving opening point for {point_key}: {point}")
                         save_opening_line(redis_url, headers, point_key, point)
                         open_point = point
+                    else:
+                        print(f"[DEBUG] Using existing opening point for {point_key}: {open_point}")
 
+                    # Calculate difference for spreads/totals by point movement
                     diff = "+0"
-
-                    # Calculate diff: spreads/totals use point difference, moneyline uses odds difference scaled
                     if market["key"] in ["spreads", "totals"]:
                         if open_point is not None and point is not None:
                             try:
@@ -221,6 +229,7 @@ def odds(sport):
                             except:
                                 diff = "+0"
                     else:
+                        # Calculate difference for moneyline by odds price movement * 100 for display
                         if open_odds is not None and live_decimal is not None:
                             try:
                                 diff_val = int((float(live_decimal) - float(open_odds)) * 100)
