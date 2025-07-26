@@ -83,6 +83,8 @@ function renderGames(games) {
 function renderSection(card, label, data) {
   if (!data || Object.keys(data).length === 0) return;
 
+  console.log(`Rendering section: ${label}`, data);  // <-- Debug log here
+
   const box = document.createElement("div");
   box.className = "odds-box";
 
@@ -105,12 +107,16 @@ function renderSection(card, label, data) {
 
   for (const team in data) {
     const { open, live, diff } = data[team];
+
+    // Additional log per team
+    console.log(`Team: ${team}, Open: ${open}, Live: ${live}, Diff: ${diff}`);
+
     const row = document.createElement("div");
     row.className = "odds-row";
     row.innerHTML = `
       <div>${team}</div>
-      <div>${open}</div>
-      <div>${live}</div>
+      <div>${open}</div>       <!-- Ensure open odds are displayed -->
+      <div>${live}</div>       <!-- Ensure live odds are displayed -->
       <div class="diff ${getDiffClass(diff)}">${diff}</div>
     `;
     grid.appendChild(row);
