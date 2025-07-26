@@ -187,6 +187,15 @@ def debug_redis(sport):
     except Exception as outer_err:
         return jsonify({"error": f"Redis debug route failed: {outer_err}"}), 500
 
+@app.route("/debug/env")
+def debug_env():
+    return jsonify({
+        "REDIS_HOST": os.getenv("REDIS_HOST"),
+        "REDIS_PORT": os.getenv("REDIS_PORT"),
+        "REDIS_PASSWORD_SET": bool(os.getenv("REDIS_PASSWORD")),
+        "ALL_ENV_KEYS": list(os.environ.keys())
+    })
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5050))
     app.run(host="0.0.0.0", port=port)
