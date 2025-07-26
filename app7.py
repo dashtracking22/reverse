@@ -27,14 +27,15 @@ ALLOWED_SPORTS = [
 MARKETS = ["h2h", "spreads", "totals"]
 
 
-def get_redis_credentials(redis_env):
-    if redis_env == "REDIS_CODE":
-        redis_url = os.getenv("REDIS_CODE_URL")
-        redis_token = os.getenv("REDIS_CODE_TOKEN")
+def get_redis_credentials():
+    base_url = os.getenv("REDIS_URL")
+    port = os.getenv("REDIS_PORT")
+    token = os.getenv("REDIS_TOKEN")
+    if base_url and port:
+        redis_url = f"{base_url}:{port}"
     else:
-        redis_url = os.getenv("REDIS_URL")
-        redis_token = os.getenv("REDIS_TOKEN")
-    return redis_url, redis_token
+        redis_url = base_url  # fallback if port missing
+    return redis_url, token
 
 
 def save_opening_line(redis_url, headers, key, value):
@@ -118,12 +119,11 @@ def sports():
 @app.route("/odds/<sport>")
 def odds(sport):
     bookmaker = request.args.get("bookmaker", "betonlineag")
-    redis_env = request.args.get("redis_env", os.getenv("REDIS_ENV", "REDIS"))
 
     if sport not in ALLOWED_SPORTS:
         return jsonify({"error": "Sport not supported"}), 400
 
-    redis_url, redis_token = get_redis_credentials(redis_env)
+    redis_url, redis_token = get_redis_credentials()
     if not redis_url or not redis_token:
         return jsonify({"error": "Redis credentials not configured properly"}), 500
 
