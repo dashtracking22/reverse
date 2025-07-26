@@ -162,17 +162,23 @@ def get_odds(sport):
         print(f"❌ Error fetching odds for {sport}@{bookmaker}: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route("/debug/redis/<sport>")
+def debug_redis(sport):
+    try:
+        keys = redis_client.keys(f"opening_odds:{sport}:*")
+        data = {}
+        for k in keys:
+            key_str = k.decode() if isinstance(k, bytes) else str(k)
+            try:
+                val = redis_client.get(k)
+                val_str = val.decode() if isinstance(val, bytes) else str(val)
+                data[key_str] = json.loads(val_str)
+            except Exception as inner_err:
+                data[key_str] = f"[Error loading value: {inner_err}]"
+        return jsonify(data)
+    except Exception as outer_err:
+        return jsonify({"error": f"Redis debug route failed: {outer_err}"}), 500
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5050))
     app.run(host="0.0.0.0", port=port)
-@app.route("/debug/redis/<sport>")
-def debug_redis(sport):
-    keys = redis_client.keys(f"opening_odds:{sport}:*")
-    data = {}
-    for k in keys:
-        try:
-            val = redis_client.get(k)
-            data[k.decode()] = json.loads(val)
-        except Exception as e:
-            data[k.decode()] = f"[Error loading value: {e}]"
-    return jsonify(data)
