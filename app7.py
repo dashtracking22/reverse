@@ -38,10 +38,14 @@ SPORTS = [
 ]
 
 # Redis setup using Render environment variables
+redis_host = os.getenv('REDIS_HOST')
+redis_port = int(os.getenv('REDIS_PORT', 6379))
+redis_password = os.getenv('REDIS_PASSWORD')
+
 redis_client = redis.Redis(
-    host=os.getenv('REDIS_HOST'),
-    port=int(os.getenv('REDIS_PORT', 6379)),
-    password=os.getenv('REDIS_PASSWORD'),
+    host=redis_host,
+    port=redis_port,
+    password=redis_password,
     ssl=True
 )
 
@@ -165,8 +169,12 @@ def get_odds(sport):
 @app.route("/debug/redis/<sport>")
 def debug_redis(sport):
     try:
+        data = {
+            "REDIS_HOST": redis_host,
+            "REDIS_PORT": redis_port,
+            "REDIS_PASSWORD_SET": bool(redis_password)
+        }
         keys = redis_client.keys(f"opening_odds:{sport}:*")
-        data = {}
         for k in keys:
             key_str = k.decode() if isinstance(k, bytes) else str(k)
             try:
