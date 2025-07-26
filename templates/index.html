@@ -22,7 +22,72 @@
     </div>
   </header>
 
-  <main id="odds-container" class="odds-cards"></main>
+  <main id="odds-container">
+    <!-- Example placeholder game structure -->
+    <div class="game-card">
+      <h2>Team A vs Team B — 07/26 12:00 PM</h2>
+
+      <div class="odds-section">
+        <h3>Moneyline</h3>
+        <div class="odds-row">
+          <div class="team-name">Team A</div>
+          <div class="odds-block">
+            <div>Open: -110</div>
+            <div>Live: -120</div>
+            <div class="diff green">-10</div>
+          </div>
+        </div>
+        <div class="odds-row">
+          <div class="team-name">Team B</div>
+          <div class="odds-block">
+            <div>Open: +100</div>
+            <div>Live: +105</div>
+            <div class="diff red">+5</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="odds-section">
+        <h3>Spread</h3>
+        <div class="odds-row">
+          <div class="team-name">Team A</div>
+          <div class="odds-block">
+            <div>Open: -2.5 (-110)</div>
+            <div>Live: -3.5 (-115)</div>
+            <div class="diff green">-1.0</div>
+          </div>
+        </div>
+        <div class="odds-row">
+          <div class="team-name">Team B</div>
+          <div class="odds-block">
+            <div>Open: +2.5 (-110)</div>
+            <div>Live: +3.5 (-105)</div>
+            <div class="diff red">+1.0</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="odds-section">
+        <h3>Total</h3>
+        <div class="odds-row">
+          <div class="team-name">Over</div>
+          <div class="odds-block">
+            <div>Open: 42.5 (-110)</div>
+            <div>Live: 43.5 (-115)</div>
+            <div class="diff green">+1.0</div>
+          </div>
+        </div>
+        <div class="odds-row">
+          <div class="team-name">Under</div>
+          <div class="odds-block">
+            <div>Open: 42.5 (-110)</div>
+            <div>Live: 41.5 (-105)</div>
+            <div class="diff red">-1.0</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
 
   <script src="/static/app.js"></script>
 </body>
