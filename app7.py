@@ -28,9 +28,13 @@ MARKETS = ["h2h", "spreads", "totals"]
 
 
 def get_redis_credentials():
-    # Simplified: just return URL and token directly, no port handling
-    redis_url = os.getenv("REDIS_URL")  # e.g. https://powerful-mongoose-56908.upstash.io
+    base_url = os.getenv("REDIS_URL")
+    port = os.getenv("REDIS_PORT")
     token = os.getenv("REDIS_TOKEN")
+    if base_url and port:
+        redis_url = f"{base_url}:{port}"
+    else:
+        redis_url = base_url  # fallback if port missing
     return redis_url, token
 
 
@@ -138,6 +142,7 @@ def odds(sport):
     redis_keys = []
     key_to_info = {}
 
+    # Prepare redis keys for batch fetch
     for game in data:
         for bm in game["bookmakers"]:
             if bm["key"] != bookmaker:
@@ -147,12 +152,8 @@ def odds(sport):
                     continue
                 for outcome in market["outcomes"]:
                     team = outcome["name"]
-                    key_odds = f"{sport}:{game['id']}:{market['key']}:{team}:open_odds"
-                    key_point = f"{sport}:{game['id']}:{market['key']}:{team}:open_point"
-                    redis_keys.append(key_odds)
-                    redis_keys.append(key_point)
-                    key_to_info[key_odds] = (game, bm, market, outcome)
-                    key_to_info[key_point] = (game, bm, market, outcome)
+                    redis_keys.append(f"{sport}:{game['id']}:{market['key']}:{team}:open_odds")
+                    redis_keys.append(f"{sport}:{game['id']}:{market['key']}:{team}:open_point")
 
     redis_results = batch_get_opening_lines(redis_url, headers, redis_keys)
     redis_values = dict(zip(redis_keys, redis_results))
@@ -180,42 +181,38 @@ def odds(sport):
                     odds_key = f"{sport}:{game['id']}:{market['key']}:{team}:open_odds"
                     point_key = f"{sport}:{game['id']}:{market['key']}:{team}:open_point"
 
-                    open_odds_raw = redis_values.get(odds_key)
-                    open_point_raw = redis_values.get(point_key)
-
                     open_odds = None
                     open_point = None
 
+                    # Parse existing opening odds from Redis
+                    open_odds_raw = redis_values.get(odds_key)
                     if open_odds_raw:
                         try:
                             open_odds = float(json.loads(open_odds_raw).get("value"))
-                            print(f"[DEBUG] Existing opening odds for {odds_key}: {open_odds}")
-                        except Exception as e:
-                            print(f"[DEBUG] Error parsing open_odds for {odds_key}: {e}")
+                        except Exception:
+                            open_odds = None
 
+                    # Parse existing opening point from Redis
+                    open_point_raw = redis_values.get(point_key)
                     if open_point_raw:
                         try:
                             open_point = float(json.loads(open_point_raw).get("value"))
-                            print(f"[DEBUG] Existing opening point for {point_key}: {open_point}")
-                        except Exception as e:
-                            print(f"[DEBUG] Error parsing open_point for {point_key}: {e}")
+                        except Exception:
+                            open_point = None
 
+                    # Save opening odds if missing
                     if open_odds is None and live_decimal is not None:
-                        print(f"[DEBUG] Saving opening odds for {odds_key}: {live_decimal}")
                         save_opening_line(redis_url, headers, odds_key, live_decimal)
                         open_odds = live_decimal
-                    else:
-                        print(f"[DEBUG] Using existing opening odds for {odds_key}: {open_odds}")
 
+                    # Save opening point if missing
                     if open_point is None and point is not None:
-                        print(f"[DEBUG] Saving opening point for {point_key}: {point}")
                         save_opening_line(redis_url, headers, point_key, point)
                         open_point = point
-                    else:
-                        print(f"[DEBUG] Using existing opening point for {point_key}: {open_point}")
 
                     diff = "+0"
 
+                    # Calculate diff: spreads/totals use point difference, moneyline uses odds difference scaled
                     if market["key"] in ["spreads", "totals"]:
                         if open_point is not None and point is not None:
                             try:
