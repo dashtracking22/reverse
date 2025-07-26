@@ -28,13 +28,9 @@ MARKETS = ["h2h", "spreads", "totals"]
 
 
 def get_redis_credentials():
-    base_url = os.getenv("REDIS_URL")
-    port = os.getenv("REDIS_PORT")
+    # Simplified: just return URL and token directly, no port handling
+    redis_url = os.getenv("REDIS_URL")  # e.g. https://powerful-mongoose-56908.upstash.io
     token = os.getenv("REDIS_TOKEN")
-    if base_url and port:
-        redis_url = f"{base_url}:{port}"
-    else:
-        redis_url = base_url  # fallback if port missing
     return redis_url, token
 
 
