@@ -1,98 +1,169 @@
-from flask import Flask, jsonify, send_from_directory, request
+from flask import Flask, jsonify
 from flask_cors import CORS
-from redis import Redis
-import os
 import requests
-import json
+import os
 from datetime import datetime
+import pytz
 
-app = Flask(__name__, static_folder='static')
+app = Flask(__name__)
 CORS(app)
 
-redis = Redis(
-    host=os.environ.get('REDIS_HOST'),
-    port=int(os.environ.get('REDIS_PORT', 6379)),
-    password=os.environ.get('REDIS_PASSWORD'),
-    decode_responses=True
-)
+# Secure credentials from Render environment variables
+API_KEY = os.getenv('API_KEY')         # Odds API key
+REDIS_URL = os.getenv('REDIS_URL')     # Upstash Redis REST endpoint
+REDIS_TOKEN = os.getenv('REDIS_TOKEN') # Upstash Redis Bearer token
 
-API_KEY = os.environ.get("THE_ODDS_API_KEY")
+BOOKMAKER = 'betonlineag'
+MARKETS = ['h2h', 'spreads', 'totals']
 
-@app.route('/')
-def serve_index():
-    return send_from_directory('static', 'index.html')
+headers = {
+    "Authorization": f"Bearer {REDIS_TOKEN}",
+    "Content-Type": "application/json"
+}
+
+
+def fetch_from_redis(key):
+    try:
+        response = requests.get(f"{REDIS_URL}/get/{key}", headers=headers)
+        data = response.json()
+        return data.get('result')
+    except Exception:
+        return None
+
+
+def save_to_redis(key, value):
+    try:
+        requests.post(f"{REDIS_URL}/set/{key}", json={"value": value}, headers=headers)
+    except Exception:
+        pass
+
+
+def american_odds(decimal_odds):
+    if decimal_odds is None:
+        return None
+    try:
+        decimal_odds = float(decimal_odds)
+        if decimal_odds >= 2.0:
+            return f"+{int((decimal_odds - 1) * 100)}"
+        else:
+            return f"-{int(100 / (decimal_odds - 1))}"
+    except:
+        return None
+
+
+def format_game_data(game, market_data):
+    game_id = game['id']
+    sport_key = game['sport_key']
+    commence_time = datetime.fromisoformat(game['commence_time'].replace('Z', '+00:00'))
+    est_time = commence_time.astimezone(pytz.timezone('US/Eastern')).strftime('%Y-%m-%d %I:%M %p')
+
+    home_team = game['home_team']
+    away_team = [team for team in game['teams'] if team != home_team][0]
+    matchup = f"{away_team} @ {home_team}"
+
+    result = {
+        'matchup': matchup,
+        'commence_time': est_time,
+        'moneyline': {},
+        'spread': {},
+        'total': {}
+    }
+
+    for market in market_data:
+        if market['key'] not in MARKETS:
+            continue
+
+        outcomes = market['outcomes']
+        if market['key'] == 'h2h':
+            result['moneyline'] = extract_market_data(game_id, sport_key, 'moneyline', outcomes, is_point_based=False)
+        elif market['key'] == 'spreads':
+            result['spread'] = extract_market_data(game_id, sport_key, 'spread', outcomes, is_point_based=True)
+        elif market['key'] == 'totals':
+            result['total'] = extract_market_data(game_id, sport_key, 'total', outcomes, is_point_based=True)
+
+    return result
+
+
+def extract_market_data(game_id, sport_key, label, outcomes, is_point_based):
+    data = {}
+    open_key = f"{sport_key}:{game_id}:{label}:open"
+    current_lines = {}
+    open_lines = {}
+
+    for outcome in outcomes:
+        name = outcome['name']
+        point = outcome.get('point')
+        price = outcome.get('price')
+        current_lines[name] = {'point': point, 'price': price}
+
+    # Retrieve or store opening odds in Redis
+    existing = fetch_from_redis(open_key)
+    if existing is None:
+        save_to_redis(open_key, current_lines)
+        open_lines = current_lines
+    else:
+        try:
+            open_lines = eval(existing)
+        except:
+            open_lines = current_lines
+
+    for name in current_lines:
+        open_price = open_lines.get(name, {}).get('price')
+        live_price = current_lines[name].get('price')
+
+        open_point = open_lines.get(name, {}).get('point')
+        live_point = current_lines[name].get('point')
+
+        open_american = american_odds(open_price)
+        live_american = american_odds(live_price)
+
+        # Diff logic
+        diff = None
+        if is_point_based and open_point is not None and live_point is not None:
+            try:
+                diff = round(float(live_point) - float(open_point), 1)
+            except:
+                diff = None
+        elif not is_point_based:
+            diff = None  # Moneyline diff stays hidden
+
+        data[name] = {
+            'open': f"{open_point if is_point_based else ''} ({open_american})",
+            'live': f"{live_point if is_point_based else ''} ({live_american})",
+            'diff': diff if diff is not None else "-"
+        }
+
+    return data
+
 
 @app.route('/sports')
 def get_sports():
-    return jsonify([
-        "baseball_mlb",
-        "basketball_wnba",
-        "mma_mixed_martial_arts",
-        "americanfootball_nfl",
-        "americanfootball_ncaaf"
-    ])
+    sports = [
+        {"key": "baseball_mlb", "title": "MLB"},
+        {"key": "americanfootball_nfl", "title": "NFL"},
+        {"key": "americanfootball_ncaaf", "title": "NCAAF"},
+        {"key": "basketball_wnba", "title": "WNBA"},
+        {"key": "mma_mixed_martial_arts", "title": "MMA"},
+    ]
+    return jsonify(sports)
 
-@app.route('/bookmakers')
-def get_bookmakers():
-    return jsonify([
-        "betonlineag",
-        "draftkings",
-        "fanduel"
-    ])
 
-@app.route('/odds/<sport>/<bookmaker>')
-def get_odds(sport, bookmaker):
-    url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds/?regions=us&markets=h2h,spreads,totals&bookmakers={bookmaker}&apiKey={API_KEY}"
-    try:
-        response = requests.get(url)
-        games = response.json()
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+@app.route('/odds/<sport>')
+def get_odds(sport):
+    url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds/?regions=us&markets={','.join(MARKETS)}&bookmakers={BOOKMAKER}&apiKey={API_KEY}"
+    response = requests.get(url)
+    games = response.json()
 
-    result = []
+    output = []
     for game in games:
-        game_id = f"{sport}:{bookmaker}:{game['home_team']} vs {game['away_team']}"
-        timestamp = game.get('commence_time', '')
-        est_time = datetime.fromisoformat(timestamp.replace("Z", "+00:00")).strftime("%m/%d, %I:%M %p ET") if timestamp else ""
+        if 'bookmakers' not in game or not game['bookmakers']:
+            continue
+        bookmaker_data = game['bookmakers'][0]
+        game_data = format_game_data(game, bookmaker_data.get('markets', []))
+        output.append(game_data)
 
-        entry = {
-            "matchup": f"{game['away_team']} vs {game['home_team']}",
-            "time": est_time,
-            "moneyline": {},
-            "spread": {},
-            "total": {}
-        }
+    return jsonify(output)
 
-        for market in game.get('bookmakers', [])[0].get('markets', []):
-            if market['key'] == 'h2h':
-                for outcome in market['outcomes']:
-                    entry['moneyline'][outcome['name']] = { "price": outcome['price'] }
-            elif market['key'] == 'spreads':
-                for outcome in market['outcomes']:
-                    entry['spread'][outcome['name']] = {
-                        "point": outcome.get('point'),
-                        "price": outcome.get('price')
-                    }
-            elif market['key'] == 'totals':
-                for outcome in market['outcomes']:
-                    entry['total'][outcome['name']] = {
-                        "point": outcome.get('point'),
-                        "price": outcome.get('price')
-                    }
-
-        key = f"opening_odds:{game_id}"
-        if not redis.exists(key):
-            redis.set(key, json.dumps(entry))
-
-        try:
-            opening = json.loads(redis.get(key))
-        except:
-            opening = entry
-
-        entry['opening'] = opening
-        result.append(entry)
-
-    return jsonify(result)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5050)
+    app.run(debug=True, port=5050)
