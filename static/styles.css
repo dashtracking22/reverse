@@ -51,6 +51,21 @@ main {
   min-width: 180px;
 }
 
+#loadingSpinner {
+  display: none;
+  margin: 1rem auto;
+  border: 5px solid #f3f3f3;
+  border-top: 5px solid #0070cc;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 .game-card {
   background-color: white;
   border-radius: 12px;

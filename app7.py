@@ -1,3 +1,4 @@
+import time
 from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 import requests
@@ -18,7 +19,9 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-# Allowed sports keys to show
+_cache = {}
+CACHE_DURATION = 30  # seconds
+
 ALLOWED_SPORTS = [
     "tennis",
     "basketball_wnba",
@@ -61,21 +64,43 @@ def to_american(decimal):
         pass
     return None
 
+def get_sports_cached():
+    now = time.time()
+    if "sports" in _cache and now - _cache["sports"]["time"] < CACHE_DURATION:
+        return _cache["sports"]["data"]
+
+    url = f"https://api.the-odds-api.com/v4/sports/?apiKey={API_KEY}"
+    res = requests.get(url)
+    if res.status_code == 200:
+        _cache["sports"] = {"time": now, "data": res.json()}
+        return _cache["sports"]["data"]
+    return []
+
+def get_odds_cached(sport, bookmaker, markets):
+    now = time.time()
+    key = f"odds_{sport}_{bookmaker}"
+    if key in _cache and now - _cache[key]["time"] < CACHE_DURATION:
+        return _cache[key]["data"]
+
+    url = (
+        f"https://api.the-odds-api.com/v4/sports/{sport}/odds/"
+        f"?regions=us&markets={','.join(markets)}&bookmakers={bookmaker}&apiKey={API_KEY}"
+    )
+    res = requests.get(url)
+    if res.status_code == 200:
+        _cache[key] = {"time": now, "data": res.json()}
+        return _cache[key]["data"]
+    else:
+        print(f"[ODDS API ERROR] {res.status_code} {res.text}")
+        return None
+
 @app.route("/")
 def home():
     return render_template("index.html")
 
 @app.route("/sports")
 def sports():
-    # Fetch sports from Odds API
-    url = f"https://api.the-odds-api.com/v4/sports/?apiKey={API_KEY}"
-    res = requests.get(url)
-    if res.status_code != 200:
-        print(f"[SPORTS API ERROR] {res.status_code} {res.text}")
-        return jsonify({"error": "Failed to fetch sports"}), 500
-
-    data = res.json()
-    # Filter to only allowed sports
+    data = get_sports_cached()
     filtered = [s for s in data if s["key"] in ALLOWED_SPORTS]
     return jsonify(filtered)
 
@@ -85,22 +110,9 @@ def odds(sport):
     if sport not in ALLOWED_SPORTS:
         return jsonify({"error": "Sport not supported"}), 400
 
-    url = (
-        f"https://api.the-odds-api.com/v4/sports/{sport}/odds/"
-        f"?regions=us&markets={','.join(MARKETS)}&bookmakers={bookmaker}&apiKey={API_KEY}"
-    )
-    print("[Odds API Request]:", url)
-    res = requests.get(url)
-
-    if res.status_code != 200:
-        print("[ODDS API ERROR]:", res.status_code, res.text)
-        return jsonify({"error": "Failed to fetch odds", "details": res.text}), 500
-
-    try:
-        data = res.json()
-    except Exception as e:
-        print("[JSON parse error]:", e)
-        return jsonify({"error": "Invalid JSON response"}), 500
+    data = get_odds_cached(sport, bookmaker, MARKETS)
+    if data is None:
+        return jsonify({"error": "Failed to fetch odds"}), 500
 
     eastern = pytz.timezone("US/Eastern")
     results = []
@@ -110,7 +122,6 @@ def odds(sport):
         start_time = datetime.fromisoformat(game['commence_time'].replace("Z", "+00:00")).astimezone(eastern)
         kickoff = start_time.strftime("%m/%d, %I:%M %p ET")
 
-        # Prepare market data buckets
         moneyline = {}
         spread = {}
         total = {}
@@ -128,7 +139,7 @@ def odds(sport):
                     point = outcome.get("point")
                     live_decimal = outcome.get("price")
 
-                    key_prefix = sport + ":" + game['id'] + ":" + market["key"] + ":" + team + ":open"
+                    key_prefix = f"{sport}:{game['id']}:{market['key']}:{team}:open"
                     open_decimal_raw = get_opening_line(key_prefix)
                     open_decimal = None
                     if open_decimal_raw:
@@ -144,9 +155,12 @@ def odds(sport):
 
                     diff = "+0"
                     if open_decimal is not None and live_decimal is not None:
-                        if market["key"] == "spreads" or market["key"] == "totals":
+                        if market["key"] in ["spreads", "totals"]:
                             try:
-                                diff_val = float(point) - float(json.loads(open_decimal_raw).get("value")) if open_decimal_raw else 0
+                                open_point = point  # Use current point as open_point fallback
+                                if open_decimal_raw:
+                                    open_point = float(point) - float(json.loads(open_decimal_raw).get("value", point))
+                                diff_val = float(point) - open_point
                                 diff = f"{diff_val:+.1f}"
                             except:
                                 diff = "+0"
@@ -157,7 +171,6 @@ def odds(sport):
                             except:
                                 diff = "+0"
 
-                    # Build proper dict per market
                     display_open = (
                         f"{point} ({to_american(open_decimal)})"
                         if market["key"] in ["spreads", "totals"] and point is not None

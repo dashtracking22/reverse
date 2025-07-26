@@ -27,19 +27,33 @@ async function loadSports() {
 }
 
 async function fetchOdds() {
-  const sportKey = document.getElementById("sportSelect").value;
-  const bookmaker = document.getElementById("bookmakerSelect").value;
-  const res = await fetch(`${baseURL}/odds/${sportKey}?bookmaker=${bookmaker}`);
+  const sportSelect = document.getElementById("sportSelect");
+  const bookmakerSelect = document.getElementById("bookmakerSelect");
+  const spinner = document.getElementById("loadingSpinner");
+  const sportKey = sportSelect.value;
+  const bookmaker = bookmakerSelect.value;
 
-  const games = await res.json();
+  spinner.style.display = "block";
+  sportSelect.disabled = true;
+  bookmakerSelect.disabled = true;
 
-  if (!Array.isArray(games)) {
-    console.error("Error fetching odds:", games);
+  try {
+    const res = await fetch(`${baseURL}/odds/${sportKey}?bookmaker=${bookmaker}`);
+    const games = await res.json();
+
+    if (!Array.isArray(games)) {
+      throw new Error("Failed to load odds");
+    }
+
+    renderGames(games);
+  } catch (e) {
+    console.error(e);
     document.getElementById("gamesContainer").innerHTML = "<p style='color:red;'>Failed to load odds.</p>";
-    return;
+  } finally {
+    spinner.style.display = "none";
+    sportSelect.disabled = false;
+    bookmakerSelect.disabled = false;
   }
-
-  renderGames(games);
 }
 
 function renderGames(games) {
