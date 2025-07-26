@@ -1,27 +1,36 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template
 from flask_cors import CORS
 import requests
 import os
 from datetime import datetime
 import pytz
 
-app = Flask(__name__)
+# Flask app setup
+app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
-# Secure credentials from Render environment variables
-API_KEY = os.getenv('API_KEY')         # Odds API key
-REDIS_URL = os.getenv('REDIS_URL')     # Upstash Redis REST endpoint
-REDIS_TOKEN = os.getenv('REDIS_TOKEN') # Upstash Redis Bearer token
+# Environment variables (set in Render dashboard)
+API_KEY = os.getenv('API_KEY')
+REDIS_URL = os.getenv('REDIS_URL')
+REDIS_TOKEN = os.getenv('REDIS_TOKEN')
 
 BOOKMAKER = 'betonlineag'
 MARKETS = ['h2h', 'spreads', 'totals']
 
+# Redis headers
 headers = {
     "Authorization": f"Bearer {REDIS_TOKEN}",
     "Content-Type": "application/json"
 }
 
 
+# Home route serves index.html
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+# Fetch from Redis
 def fetch_from_redis(key):
     try:
         response = requests.get(f"{REDIS_URL}/get/{key}", headers=headers)
@@ -31,6 +40,7 @@ def fetch_from_redis(key):
         return None
 
 
+# Save to Redis
 def save_to_redis(key, value):
     try:
         requests.post(f"{REDIS_URL}/set/{key}", json={"value": value}, headers=headers)
@@ -38,6 +48,7 @@ def save_to_redis(key, value):
         pass
 
 
+# Convert decimal odds to American
 def american_odds(decimal_odds):
     if decimal_odds is None:
         return None
@@ -51,6 +62,7 @@ def american_odds(decimal_odds):
         return None
 
 
+# Format data for each game
 def format_game_data(game, market_data):
     game_id = game['id']
     sport_key = game['sport_key']
@@ -84,6 +96,7 @@ def format_game_data(game, market_data):
     return result
 
 
+# Extract odds and calculate diff
 def extract_market_data(game_id, sport_key, label, outcomes, is_point_based):
     data = {}
     open_key = f"{sport_key}:{game_id}:{label}:open"
@@ -96,7 +109,7 @@ def extract_market_data(game_id, sport_key, label, outcomes, is_point_based):
         price = outcome.get('price')
         current_lines[name] = {'point': point, 'price': price}
 
-    # Retrieve or store opening odds in Redis
+    # Load/save opening odds from Redis
     existing = fetch_from_redis(open_key)
     if existing is None:
         save_to_redis(open_key, current_lines)
@@ -117,7 +130,6 @@ def extract_market_data(game_id, sport_key, label, outcomes, is_point_based):
         open_american = american_odds(open_price)
         live_american = american_odds(live_price)
 
-        # Diff logic
         diff = None
         if is_point_based and open_point is not None and live_point is not None:
             try:
@@ -125,7 +137,7 @@ def extract_market_data(game_id, sport_key, label, outcomes, is_point_based):
             except:
                 diff = None
         elif not is_point_based:
-            diff = None  # Moneyline diff stays hidden
+            diff = None  # moneyline — skip diff
 
         data[name] = {
             'open': f"{open_point if is_point_based else ''} ({open_american})",
@@ -136,6 +148,7 @@ def extract_market_data(game_id, sport_key, label, outcomes, is_point_based):
     return data
 
 
+# Sports dropdown route
 @app.route('/sports')
 def get_sports():
     sports = [
@@ -148,6 +161,7 @@ def get_sports():
     return jsonify(sports)
 
 
+# Odds route for selected sport
 @app.route('/odds/<sport>')
 def get_odds(sport):
     url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds/?regions=us&markets={','.join(MARKETS)}&bookmakers={BOOKMAKER}&apiKey={API_KEY}"
@@ -165,5 +179,6 @@ def get_odds(sport):
     return jsonify(output)
 
 
+# Run locally or in dev mode
 if __name__ == '__main__':
     app.run(debug=True, port=5050)

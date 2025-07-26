@@ -1,4 +1,4 @@
-const baseURL = "http://localhost:5050"; // Change to your Render URL in production
+const baseURL = ""; // Leave blank for same-origin (Render-hosted)
 
 document.addEventListener("DOMContentLoaded", () => {
   loadSports();
@@ -6,29 +6,38 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 async function loadSports() {
-  const res = await fetch(`${baseURL}/sports`);
-  const sports = await res.json();
+  try {
+    const res = await fetch(`${baseURL}/sports`);
+    const sports = await res.json();
 
-  const select = document.getElementById("sportSelect");
-  sports.forEach(sport => {
-    const option = document.createElement("option");
-    option.value = sport.key;
-    option.textContent = sport.title;
-    select.appendChild(option);
-  });
+    const select = document.getElementById("sportSelect");
+    select.innerHTML = "";
 
-  // Load first sport automatically
-  if (sports.length > 0) {
-    select.value = sports[0].key;
-    fetchOdds();
+    sports.forEach(sport => {
+      const option = document.createElement("option");
+      option.value = sport.key;
+      option.textContent = sport.title;
+      select.appendChild(option);
+    });
+
+    if (sports.length > 0) {
+      select.value = sports[0].key;
+      fetchOdds();
+    }
+  } catch (err) {
+    console.error("Failed to load sports:", err);
   }
 }
 
 async function fetchOdds() {
   const sportKey = document.getElementById("sportSelect").value;
-  const res = await fetch(`${baseURL}/odds/${sportKey}`);
-  const games = await res.json();
-  renderGames(games);
+  try {
+    const res = await fetch(`${baseURL}/odds/${sportKey}`);
+    const games = await res.json();
+    renderGames(games);
+  } catch (err) {
+    console.error("Failed to fetch odds:", err);
+  }
 }
 
 function renderGames(games) {
@@ -45,7 +54,6 @@ function renderGames(games) {
       <h2>${game.matchup}</h2>
       <span>${game.commence_time}</span>
     `;
-
     card.appendChild(header);
 
     ["moneyline", "spread", "total"].forEach(section => {
@@ -95,4 +103,3 @@ function getDiffClass(diff) {
   }
   return "";
 }
- 
