@@ -1,43 +1,38 @@
-const baseURL = ""; // Leave blank for same-origin (Render-hosted)
+const baseURL = "";
 
 document.addEventListener("DOMContentLoaded", () => {
   loadSports();
   document.getElementById("sportSelect").addEventListener("change", fetchOdds);
+  document.getElementById("bookmakerSelect").addEventListener("change", fetchOdds);
 });
 
 async function loadSports() {
-  try {
-    const res = await fetch(`${baseURL}/sports`);
-    const sports = await res.json();
+  const res = await fetch(`${baseURL}/sports`);
+  const sports = await res.json();
 
-    const select = document.getElementById("sportSelect");
-    select.innerHTML = "";
+  const select = document.getElementById("sportSelect");
+  select.innerHTML = "";
 
-    sports.forEach(sport => {
-      const option = document.createElement("option");
-      option.value = sport.key;
-      option.textContent = sport.title;
-      select.appendChild(option);
-    });
+  sports.forEach(sport => {
+    const option = document.createElement("option");
+    option.value = sport.key;
+    option.textContent = sport.title;
+    select.appendChild(option);
+  });
 
-    if (sports.length > 0) {
-      select.value = sports[0].key;
-      fetchOdds();
-    }
-  } catch (err) {
-    console.error("Failed to load sports:", err);
+  if (sports.length > 0) {
+    select.value = sports[0].key;
+    fetchOdds();
   }
 }
 
 async function fetchOdds() {
   const sportKey = document.getElementById("sportSelect").value;
-  try {
-    const res = await fetch(`${baseURL}/odds/${sportKey}`);
-    const games = await res.json();
-    renderGames(games);
-  } catch (err) {
-    console.error("Failed to fetch odds:", err);
-  }
+  const bookmaker = document.getElementById("bookmakerSelect").value;
+
+  const res = await fetch(`${baseURL}/odds/${sportKey}?bookmaker=${bookmaker}`);
+  const games = await res.json();
+  renderGames(games);
 }
 
 function renderGames(games) {
@@ -76,14 +71,12 @@ function renderGames(games) {
       for (const team in game[section]) {
         const { open, live, diff } = game[section][team];
         const row = document.createElement("tr");
-
         row.innerHTML = `
           <td>${team}</td>
           <td>${open}</td>
           <td>${live}</td>
           <td class="diff ${getDiffClass(diff)}">${diff}</td>
         `;
-
         tbody.appendChild(row);
       }
 
