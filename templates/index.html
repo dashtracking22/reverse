@@ -2,93 +2,24 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>{ Reverse }</title>
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="static/styles.css">
 </head>
 <body>
-  <header>
-    <h1>{ Reverse }</h1>
-    <div class="controls">
-      <label for="sport-select">Select a Sport:</label>
-      <select id="sport-select"></select>
+  <h1>{ Reverse }</h1>
 
-      <label for="bookmaker-select">Pick Your Book:</label>
-      <select id="bookmaker-select">
-        <option value="betonlineag">BetOnlineAg</option>
-        <option value="draftkings">DraftKings</option>
-        <option value="fan-duel">FanDuel</option>
-      </select>
-    </div>
-  </header>
+  <label for="sport-select">Pick your book:</label>
+  <select id="sport-select">
+    <option value="mma_mixed_martial_arts">MMA</option>
+    <option value="baseball_mlb">MLB</option>
+    <option value="basketball_wnba">WNBA</option>
+    <option value="americanfootball_nfl">NFL</option>
+    <option value="americanfootball_ncaaf">NCAAF</option>
+  </select>
 
-  <main id="odds-container">
-    <!-- Example placeholder game structure -->
-    <div class="game-card">
-      <h2>Team A vs Team B — 07/26 12:00 PM</h2>
+  <div id="games-container"></div>
 
-      <div class="odds-section">
-        <h3>Moneyline</h3>
-        <div class="odds-row">
-          <div class="team-name">Team A</div>
-          <div class="odds-block">
-            <div>Open: -110</div>
-            <div>Live: -120</div>
-            <div class="diff green">-10</div>
-          </div>
-        </div>
-        <div class="odds-row">
-          <div class="team-name">Team B</div>
-          <div class="odds-block">
-            <div>Open: +100</div>
-            <div>Live: +105</div>
-            <div class="diff red">+5</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="odds-section">
-        <h3>Spread</h3>
-        <div class="odds-row">
-          <div class="team-name">Team A</div>
-          <div class="odds-block">
-            <div>Open: -2.5 (-110)</div>
-            <div>Live: -3.5 (-115)</div>
-            <div class="diff green">-1.0</div>
-          </div>
-        </div>
-        <div class="odds-row">
-          <div class="team-name">Team B</div>
-          <div class="odds-block">
-            <div>Open: +2.5 (-110)</div>
-            <div>Live: +3.5 (-105)</div>
-            <div class="diff red">+1.0</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="odds-section">
-        <h3>Total</h3>
-        <div class="odds-row">
-          <div class="team-name">Over</div>
-          <div class="odds-block">
-            <div>Open: 42.5 (-110)</div>
-            <div>Live: 43.5 (-115)</div>
-            <div class="diff green">+1.0</div>
-          </div>
-        </div>
-        <div class="odds-row">
-          <div class="team-name">Under</div>
-          <div class="odds-block">
-            <div>Open: 42.5 (-110)</div>
-            <div>Live: 41.5 (-105)</div>
-            <div class="diff red">-1.0</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </main>
-
-  <script src="/static/app.js"></script>
+  <script src="static/app.js" defer></script>
 </body>
 </html>

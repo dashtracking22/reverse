@@ -1,79 +1,43 @@
 body {
   font-family: Arial, sans-serif;
-  background-color: #f9f9f9;
-  margin: 0;
-  padding: 0;
-  color: #222;
-}
-
-header {
-  background-color: #ffffff;
+  background: #f9f9f9;
+  color: #333;
   padding: 20px;
-  text-align: center;
-  border-bottom: 1px solid #ddd;
 }
 
 h1 {
-  font-size: 2rem;
-  margin: 0;
+  text-align: center;
   font-weight: bold;
 }
 
-.controls {
-  margin-top: 10px;
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  flex-wrap: wrap;
+label {
+  font-weight: bold;
 }
 
 select {
+  margin-left: 10px;
   padding: 5px;
-  font-size: 1rem;
 }
 
-main {
-  max-width: 800px;
-  margin: 30px auto;
-  padding: 0 15px;
+#games-container {
+  margin-top: 20px;
+  display: grid;
+  gap: 20px;
 }
 
 .game-card {
-  background-color: #ffffff;
+  background: white;
+  border: 1px solid #ddd;
   border-radius: 12px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-  padding: 20px;
-  margin-bottom: 25px;
+  padding: 15px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
 }
 
-.game-card h2 {
-  font-size: 1.2rem;
-  margin-bottom: 10px;
+.market-block {
+  margin-top: 10px;
 }
 
-.section {
-  margin-bottom: 15px;
-}
-
-.section h3 {
-  font-size: 1rem;
-  margin-bottom: 5px;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 4px;
-}
-
-.odds-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 4px 0;
-}
-
-.diff-green {
-  color: green;
-  font-weight: bold;
-}
-
-.diff-red {
-  color: red;
-  font-weight: bold;
+.line-row {
+  margin-left: 10px;
+  font-size: 14px;
 }
