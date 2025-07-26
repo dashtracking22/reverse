@@ -2,23 +2,27 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>BetKarma - Reverse Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{ Reverse }</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
   <header>
-    <h1>Cash Bros LLC</h1>
+    <h1>{ Reverse }</h1>
+    <div class="controls">
+      <label for="sport-select">Select a Sport:</label>
+      <select id="sport-select"></select>
+
+      <label for="bookmaker-select">Pick Your Book:</label>
+      <select id="bookmaker-select">
+        <option value="betonlineag">BetOnlineAg</option>
+        <option value="draftkings">DraftKings</option>
+        <option value="fan-duel">FanDuel</option>
+      </select>
+    </div>
   </header>
 
-  <main>
-    <label for="sport-select">Select a Sport:</label>
-    <select id="sport-select">
-      <option value="">-- Choose a sport --</option>
-    </select>
-
-    <div id="games-container"></div>
-  </main>
+  <main id="odds-container"></main>
 
   <script src="/static/app.js"></script>
 </body>
