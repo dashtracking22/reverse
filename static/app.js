@@ -1,5 +1,6 @@
 document.addEventListener("DOMContentLoaded", () => {
   const sportSelect = document.getElementById("sportSelect");
+  const bookmakerSelect = document.getElementById("bookmakerSelect");
   const gamesContainer = document.getElementById("gamesContainer");
 
   fetch("/sports")
@@ -11,16 +12,20 @@ document.addEventListener("DOMContentLoaded", () => {
         option.textContent = sport;
         sportSelect.appendChild(option);
       });
-      loadGames(sports[0]);
+      loadGames(sports[0], bookmakerSelect.value);
     });
 
   sportSelect.addEventListener("change", () => {
-    loadGames(sportSelect.value);
+    loadGames(sportSelect.value, bookmakerSelect.value);
   });
 
-  function loadGames(sport) {
+  bookmakerSelect.addEventListener("change", () => {
+    loadGames(sportSelect.value, bookmakerSelect.value);
+  });
+
+  function loadGames(sport, bookmaker) {
     gamesContainer.innerHTML = "Loading...";
-    fetch(`/odds/${sport}`)
+    fetch(`/odds/${sport}?bookmaker=${bookmaker}`)
       .then((res) => res.json())
       .then((games) => {
         gamesContainer.innerHTML = "";
@@ -30,21 +35,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
           card.innerHTML = `
             <h2>${game.matchup} — ${game.time}</h2>
-
-            <div class="section">
-              <h3>Moneyline</h3>
-              ${renderOddsSection(game, "moneyline")}
-            </div>
-
-            <div class="section">
-              <h3>Spread</h3>
-              ${renderOddsSection(game, "spread", true)}
-            </div>
-
-            <div class="section">
-              <h3>Total</h3>
-              ${renderOddsSection(game, "total", true)}
-            </div>
+            <div class="section"><h3>Moneyline</h3>${renderOddsSection(game, "moneyline")}</div>
+            <div class="section"><h3>Spread</h3>${renderOddsSection(game, "spread", true)}</div>
+            <div class="section"><h3>Total</h3>${renderOddsSection(game, "total", true)}</div>
           `;
 
           gamesContainer.appendChild(card);
@@ -53,31 +46,29 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderOddsSection(game, key, includePoints = false) {
-    const teams = Object.keys(game[key]);
-    return teams
-      .map((team) => {
-        const open = game.opening[key]?.[team];
-        const live = game[key]?.[team];
-        if (!open || !live) return "";
+    const teams = Object.keys(game[key] || {});
+    return teams.map((team) => {
+      const open = game.opening[key]?.[team];
+      const live = game[key]?.[team];
+      if (!open || !live) return "";
 
-        let diff = "";
-        if (includePoints && open.point !== undefined && live.point !== undefined) {
-          const movement = (live.point - open.point).toFixed(1);
-          diff = `<span class="${movement >= 0 ? "green" : "red"}">Diff: ${movement}</span>`;
-        } else if (open.price && live.price) {
-          const movement = live.price - open.price;
-          diff = `<span class="${movement >= 0 ? "green" : "red"}">Diff: ${movement}</span>`;
-        }
+      let diff = "";
+      if (includePoints && open.point !== undefined && live.point !== undefined) {
+        const movement = (live.point - open.point).toFixed(1);
+        diff = `<span class="${movement >= 0 ? "green" : "red"}">Diff: ${movement}</span>`;
+      } else if (open.price && live.price) {
+        const movement = live.price - open.price;
+        diff = `<span class="${movement >= 0 ? "green" : "red"}">Diff: ${movement}</span>`;
+      }
 
-        return `
-          <div class="row">
-            <div>${team}</div>
-            <div>Open: ${includePoints ? open.point + " (" + open.price + ")" : open.price}</div>
-            <div>Live: ${includePoints ? live.point + " (" + live.price + ")" : live.price}</div>
-            <div>${diff}</div>
-          </div>
-        `;
-      })
-      .join("");
+      return `
+        <div class="row">
+          <div>${team}</div>
+          <div>Open: ${includePoints ? open.point + " (" + open.price + ")" : open.price}</div>
+          <div>Live: ${includePoints ? live.point + " (" + live.price + ")" : live.price}</div>
+          <div>${diff}</div>
+        </div>
+      `;
+    }).join("");
   }
 });

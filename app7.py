@@ -1,4 +1,3 @@
-# ✅ app7.py (Flask backend)
 from flask import Flask, jsonify, send_from_directory, request
 from flask_cors import CORS
 from redis import Redis
@@ -18,7 +17,7 @@ redis = Redis(
 )
 
 API_KEY = os.environ.get("THE_ODDS_API_KEY")
-BOOKMAKER = "betonlineag"
+DEFAULT_BOOKMAKER = "betonlineag"
 
 @app.route('/')
 def serve_index():
@@ -36,7 +35,8 @@ def get_sports():
 
 @app.route('/odds/<sport>')
 def get_odds(sport):
-    url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds/?regions=us&markets=h2h,spreads,totals&bookmakers={BOOKMAKER}&apiKey={API_KEY}"
+    bookmaker = request.args.get("bookmaker", DEFAULT_BOOKMAKER)
+    url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds/?regions=us&markets=h2h,spreads,totals&bookmakers={bookmaker}&apiKey={API_KEY}"
     try:
         response = requests.get(url)
         games = response.json()
@@ -76,7 +76,7 @@ def get_odds(sport):
                         "price": outcome.get('price')
                     }
 
-        key = f"opening_odds:{game_id}"
+        key = f"opening_odds:{game_id}:{bookmaker}"
         if not redis.exists(key):
             redis.set(key, json.dumps(entry))
 
