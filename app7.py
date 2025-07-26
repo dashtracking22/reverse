@@ -59,11 +59,17 @@ def home():
 def odds():
     url = f"https://api.the-odds-api.com/v4/sports/{SPORT}/odds/?regions=us&markets={MARKET}&bookmakers={BOOKMAKER}&apiKey={API_KEY}"
     res = requests.get(url)
-    if res.status_code != 200:
-        print("ODDS API ERROR:", res.text)
-        return jsonify({"error": "Failed to fetch odds"}), 500
 
-    data = res.json()
+    if res.status_code != 200:
+        print("ODDS API ERROR:", res.status_code, res.text)  # 💥 LOGS THE ERROR
+        return jsonify({"error": "Failed to fetch odds", "details": res.text}), 500
+
+    try:
+        data = res.json()
+    except Exception as e:
+        print("JSON parse error:", e)
+        return jsonify({"error": "Invalid JSON response"}), 500
+
     eastern = pytz.timezone("US/Eastern")
     results = []
 
@@ -113,3 +119,4 @@ def odds():
 
 if __name__ == "__main__":
     app.run(debug=True, port=5050)
+           
