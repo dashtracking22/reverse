@@ -1,0 +1,25 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# macOS
+.DS_Store
+
+# IDE/editor
+.vscode/
+.idea/
+
+# Virtualenv
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+*.env
+
+# Local logs (don’t version)
+odds_log.json
+opening_odds.json
+
