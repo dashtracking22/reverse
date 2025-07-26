@@ -1,43 +1,49 @@
 body {
-  font-family: Arial, sans-serif;
-  background: #f9f9f9;
-  color: #333;
-  padding: 20px;
+  font-family: sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #f4f4f4;
 }
 
-h1 {
+header {
+  background-color: #111;
+  color: white;
+  padding: 1rem;
   text-align: center;
-  font-weight: bold;
-}
-
-label {
-  font-weight: bold;
 }
 
 select {
-  margin-left: 10px;
-  padding: 5px;
+  margin-top: 1rem;
+  padding: 0.5rem;
+  font-size: 1rem;
 }
 
-#games-container {
-  margin-top: 20px;
-  display: grid;
-  gap: 20px;
-}
-
-.game-card {
+.card {
   background: white;
-  border: 1px solid #ddd;
-  border-radius: 12px;
-  padding: 15px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  margin: 1rem;
+  padding: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
 }
 
-.market-block {
-  margin-top: 10px;
+.card h2 {
+  margin-top: 0;
 }
 
-.line-row {
-  margin-left: 10px;
-  font-size: 14px;
+.section {
+  margin-top: 1rem;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  margin: 0.25rem 0;
+}
+
+.green {
+  color: green;
+}
+
+.red {
+  color: red;
 }
