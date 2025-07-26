@@ -30,18 +30,6 @@ main {
   padding: 0 1rem;
 }
 
-#controls {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 2rem;
-}
-
-#sportSelect {
-  padding: 0.5rem;
-  font-size: 1rem;
-}
-
 .game-card {
   background-color: white;
   border-radius: 12px;
@@ -58,52 +46,23 @@ main {
   padding-bottom: 0.25rem;
 }
 
-.game-header h2 {
-  margin: 0;
-  font-size: 1.15rem;
+.odds-box table {
+  width: 100%;
+  border-collapse: collapse;
 }
 
-.odds-box {
-  margin-bottom: 1.5rem;
-}
-
-.odds-box h3 {
-  font-size: 1rem;
-  margin-bottom: 0.5rem;
-  color: #0070cc;
-}
-
-.odds-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.odds-row {
-  display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr;
-  gap: 0.5rem;
-  padding: 0.4rem 0;
-  align-items: center;
-}
-
-.odds-row.header {
-  font-weight: bold;
-  border-bottom: 1px solid #ddd;
-  padding-bottom: 0.3rem;
-  color: #666;
-}
-
-.diff {
-  font-weight: 600;
+.odds-box th, .odds-box td {
+  padding: 0.5rem;
+  border: 1px solid #ddd;
   text-align: center;
 }
 
 .diff.positive {
   color: green;
+  font-weight: bold;
 }
 
 .diff.negative {
   color: red;
+  font-weight: bold;
 }
- 

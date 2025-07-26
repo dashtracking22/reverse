@@ -2,8 +2,8 @@ from flask import Flask, jsonify, render_template
 from flask_cors import CORS
 import requests
 import os
-import pytz
 from datetime import datetime
+import pytz
 import json
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -13,136 +13,103 @@ API_KEY = os.getenv("API_KEY")
 REDIS_URL = os.getenv("REDIS_URL")
 REDIS_TOKEN = os.getenv("REDIS_TOKEN")
 
+SPORT = "mma_mixed_martial_arts"
+BOOKMAKER = "draftkings"
+MARKET = "h2h"
+
 HEADERS = {
     "Authorization": f"Bearer {REDIS_TOKEN}",
     "Content-Type": "application/json"
 }
 
-MARKETS = ["h2h", "spreads", "totals"]
-BOOKMAKER = "betonlineag"
-
 def save_opening_line(key, value):
     url = f"{REDIS_URL}/set/{key}"
     payload = json.dumps({"value": value})
-    requests.post(url, headers=HEADERS, data=payload)
+    try:
+        requests.post(url, headers=HEADERS, data=payload)
+    except Exception as e:
+        print("Redis save error:", e)
 
 def get_opening_line(key):
     url = f"{REDIS_URL}/get/{key}"
-    res = requests.get(url, headers=HEADERS)
-    if res.status_code == 200 and res.json().get("result"):
-        return res.json()["result"]
+    try:
+        res = requests.get(url, headers=HEADERS)
+        if res.status_code == 200 and res.json().get("result"):
+            return res.json()["result"]
+    except Exception as e:
+        print("Redis get error:", e)
     return None
 
 def to_american(decimal):
-    if decimal is None or decimal == 0: return None
     try:
         decimal = float(decimal)
         if decimal >= 2:
             return f"+{int((decimal - 1) * 100)}"
-        else:
+        elif decimal > 1:
             return f"-{int(100 / (decimal - 1))}"
     except:
-        return None
+        pass
+    return None
 
 @app.route("/")
 def home():
     return render_template("index.html")
 
-@app.route("/sports")
-def sports():
-    url = f"https://api.the-odds-api.com/v4/sports/?apiKey={API_KEY}"
-    res = requests.get(url)
-    data = res.json()
-    valid_keys = [
-        "baseball_mlb",
-        "mma_mixed_martial_arts",
-        "basketball_wnba",
-        "americanfootball_nfl",
-        "americanfootball_ncaaf"
-    ]
-    return jsonify([s for s in data if s["key"] in valid_keys])
-
-@app.route("/odds/<sport>")
-def odds(sport):
-    url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds/?regions=us&markets={','.join(MARKETS)}&bookmakers={BOOKMAKER}&apiKey={API_KEY}"
+@app.route("/odds")
+def odds():
+    url = f"https://api.the-odds-api.com/v4/sports/{SPORT}/odds/?regions=us&markets={MARKET}&bookmakers={BOOKMAKER}&apiKey={API_KEY}"
     res = requests.get(url)
     if res.status_code != 200:
+        print("ODDS API ERROR:", res.text)
         return jsonify({"error": "Failed to fetch odds"}), 500
 
     data = res.json()
     eastern = pytz.timezone("US/Eastern")
-    games = []
+    results = []
 
     for game in data:
         matchup = f"{game['home_team']} vs {game['away_team']}"
-        commence_time = datetime.fromisoformat(game['commence_time'].replace("Z", "+00:00")).astimezone(eastern)
-        kickoff = commence_time.strftime("%m/%d, %I:%M %p ET")
+        start_time = datetime.fromisoformat(game['commence_time'].replace("Z", "+00:00")).astimezone(eastern)
+        kickoff = start_time.strftime("%m/%d, %I:%M %p ET")
 
-        game_data = {
-            "matchup": matchup,
-            "commence_time": kickoff,
-            "moneyline": {},
-            "spread": {},
-            "total": {}
-        }
+        game_odds = {}
 
         for bm in game["bookmakers"]:
             if bm["key"] != BOOKMAKER:
                 continue
 
             for market in bm["markets"]:
-                label = market["key"]
+                if market["key"] != MARKET:
+                    continue
 
                 for outcome in market["outcomes"]:
-                    team = outcome.get("name")
-                    decimal = outcome.get("price")
-                    point = outcome.get("point")
+                    team = outcome["name"]
+                    live_decimal = outcome.get("price")
+                    open_key = f"{SPORT}:{game['id']}:moneyline:{team}:open"
+                    open_decimal = get_opening_line(open_key)
 
-                    if label == "h2h":
-                        key = f"{sport}:{game['id']}:moneyline:{team}:open"
-                        open_val = get_opening_line(key)
-                        if not open_val and decimal:
-                            save_opening_line(key, decimal)
-                            open_val = decimal
-                        diff = f"{int((float(decimal) - float(open_val)) * 100):+}" if open_val else "+0"
+                    if not open_decimal and live_decimal:
+                        save_opening_line(open_key, live_decimal)
+                        open_decimal = live_decimal
 
-                        game_data["moneyline"][team] = {
-                            "open": to_american(open_val),
-                            "live": to_american(decimal),
-                            "diff": diff
-                        }
+                    diff = (
+                        f"{int((float(live_decimal) - float(open_decimal)) * 100):+}"
+                        if open_decimal else "+0"
+                    )
 
-                    elif label == "spreads":
-                        key = f"{sport}:{game['id']}:spread:{team}:open"
-                        open_val = get_opening_line(key)
-                        if not open_val and point is not None:
-                            save_opening_line(key, point)
-                            open_val = point
-                        diff = round(float(point) - float(open_val), 1) if open_val else 0
+                    game_odds[team] = {
+                        "open": to_american(open_decimal),
+                        "live": to_american(live_decimal),
+                        "diff": diff
+                    }
 
-                        game_data["spread"][team] = {
-                            "open": f"{open_val} ({to_american(decimal)})",
-                            "live": f"{point} ({to_american(decimal)})",
-                            "diff": f"{diff:+.1f}"
-                        }
+        results.append({
+            "matchup": matchup,
+            "commence_time": kickoff,
+            "moneyline": game_odds
+        })
 
-                    elif label == "totals":
-                        key = f"{sport}:{game['id']}:total:{team}:open"
-                        open_val = get_opening_line(key)
-                        if not open_val and point is not None:
-                            save_opening_line(key, point)
-                            open_val = point
-                        diff = round(float(point) - float(open_val), 1) if open_val else 0
-
-                        game_data["total"][team] = {
-                            "open": f"{open_val} ({to_american(decimal)})",
-                            "live": f"{point} ({to_american(decimal)})",
-                            "diff": f"{diff:+.1f}"
-                        }
-
-        games.append(game_data)
-
-    return jsonify(games)
+    return jsonify(results)
 
 if __name__ == "__main__":
     app.run(debug=True, port=5050)
