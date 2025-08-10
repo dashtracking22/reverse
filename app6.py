@@ -206,7 +206,7 @@ def normalize_event_record(sport: str, event: Dict[str, Any], bookmaker: str) ->
         return out
 
     for m in bk.get("markets", []):
-        mkey = m.get("key")  # "h2h", "spreads", "totals"
+        mkey = m.get("key")
         outcomes = m.get("outcomes", [])
         if mkey == "h2h":
             for o in outcomes:
@@ -247,7 +247,7 @@ def normalize_event_record(sport: str, event: Dict[str, Any], bookmaker: str) ->
 
         elif mkey == "totals":
             for o in outcomes:
-                name = o.get("name")  # "Over" / "Under"
+                name = o.get("name")
                 price = safe_int(o.get("price"))
                 point = safe_float(o.get("point"))
                 sel_key = make_key(sport, event_id, "totals", name, bookmaker)
@@ -277,7 +277,8 @@ def root():
 
 @app.route("/sports")
 def sports():
-    """Normalize to keys so the dropdown always fills."""
+    # Log hits so we can see this in Render logs
+    app.logger.info("HIT /sports")
     try:
         r = requests.get(
             f"{BASE}/sports",
@@ -288,8 +289,10 @@ def sports():
         arr = r.json()
         keys = [x.get("key") for x in arr if x.get("active")]
         keys = [k for k in keys if k in ALLOWED_SPORTS]
+        app.logger.info("Returning %d sports", len(keys))
         return jsonify({"sports": keys})
-    except Exception:
+    except Exception as e:
+        app.logger.warning("Sports fallback due to error: %s", e)
         return jsonify({"sports": ALLOWED_SPORTS, "note": "fallback"}), 200
 
 @app.route("/bookmakers")

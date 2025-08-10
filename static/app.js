@@ -1,5 +1,15 @@
 const API_BASE = window.location.origin.replace(/\/+$/, "");
 
+// Local fallback list so the Sport dropdown works even if /sports fails
+const FALLBACK_SPORTS = [
+  "americanfootball_ncaaf",
+  "americanfootball_nfl",
+  "basketball_nba",
+  "basketball_wnba",
+  "mma_mixed_martial_arts",
+  "baseball_mlb",
+];
+
 const sportSelect = document.getElementById("sportSelect");
 const bookmakerSelect = document.getElementById("bookmakerSelect");
 const refreshBtn = document.getElementById("refreshBtn");
@@ -21,22 +31,40 @@ function signed(val){
 }
 
 async function initControls(){
-  const [sportsResp, books] = await Promise.all([
-    fetch(`${API_BASE}/sports`).then(r=>r.json()),
-    fetch(`${API_BASE}/bookmakers`).then(r=>r.json())
-  ]);
-
-  // /sports returns {"sports":[...]} (our backend); tolerate raw arrays just in case
   let sportKeys = [];
-  if (Array.isArray(sportsResp?.sports)) sportKeys = sportsResp.sports;
-  else if (Array.isArray(sportsResp)) sportKeys = sportsResp.map(s=>s.key).filter(Boolean);
 
+  // Try the backend /sports first
+  try {
+    const sportsResp = await fetch(`${API_BASE}/sports`).then(r=>r.json());
+    if (Array.isArray(sportsResp?.sports)) {
+      sportKeys = sportsResp.sports;
+    } else if (Array.isArray(sportsResp)) {
+      // tolerate raw Odds API array [{key,...}]
+      sportKeys = sportsResp.map(s=>s.key).filter(Boolean);
+    }
+  } catch (_) {
+    // ignore; we'll fall back
+  }
+
+  // If backend didn't provide keys, use local fallback
+  if (!sportKeys.length) {
+    console.warn("Using FALLBACK_SPORTS for dropdown");
+    sportKeys = FALLBACK_SPORTS.slice();
+  }
+
+  // Populate sport dropdown
   sportSelect.innerHTML = "";
   sportKeys.forEach(s=>{
     const opt = document.createElement("option");
     opt.value = s; opt.textContent = s;
     sportSelect.appendChild(opt);
   });
+
+  // Bookmakers
+  let books = { bookmakers: [], default: "" };
+  try {
+    books = await fetch(`${API_BASE}/bookmakers`).then(r=>r.json());
+  } catch (_) {}
 
   bookmakerSelect.innerHTML = "";
   (books.bookmakers || []).forEach(b=>{
@@ -76,9 +104,10 @@ function fmtPointWithPrice(point, price){
 }
 
 function render(records){
-  content.innerHTML = "";
+  const container = content;
+  container.innerHTML = "";
   if(!records || !records.length){
-    content.innerHTML = `<div class="game"><div class="title">No games</div></div>`;
+    container.innerHTML = `<div class="game"><div class="title">No games</div></div>`;
     return;
   }
 
@@ -114,7 +143,7 @@ function render(records){
       `;
     });
 
-    // Totals (point diff only) — Over/Under rows
+    // Totals (point diff only)
     let totRows = "";
     ["Over","Under"].forEach(side=>{
       const v = (rec.totals||{})[side];
@@ -140,7 +169,7 @@ function render(records){
       ${renderTable("Spread", spRows)}
       ${renderTable("Total", totRows)}
     `;
-    content.appendChild(gameEl);
+    container.appendChild(gameEl);
   });
 }
 
