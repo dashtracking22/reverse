@@ -1,133 +1,168 @@
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", function () {
     const sportSelect = document.getElementById("sportSelect");
     const bookmakerSelect = document.getElementById("bookmakerSelect");
-    const gamesContainer = document.getElementById("gamesContainer");
+    const oddsContainer = document.getElementById("oddsContainer");
 
     let currentSport = null;
     let currentBookmaker = null;
 
-    async function fetchSports() {
-        try {
-            const res = await fetch("/sports");
-            const data = await res.json();
+    // Map API sport keys to friendly names
+    const SPORT_NAMES = {
+        "americanfootball_ncaaf": "NCAAF",
+        "americanfootball_ncaa": "NCAAF",
+        "americanfootball_nfl": "NFL",
+        "basketball_nba": "NBA",
+        "basketball_wnba": "WNBA",
+        "mma_mixed_martial_arts": "MMA",
+        "baseball_mlb": "MLB",
+    };
+
+    function friendlySportName(key) {
+        return SPORT_NAMES[key] || key;
+    }
+
+    // Load sports dropdown
+    fetch("/sports")
+        .then((res) => res.json())
+        .then((data) => {
             sportSelect.innerHTML = "";
-            data.sports.forEach(sport => {
-                const opt = document.createElement("option");
-                opt.value = sport;
-                opt.textContent = sport;
-                sportSelect.appendChild(opt);
-            });
-            currentSport = sportSelect.value;
-        } catch (err) {
-            console.error("Error fetching sports:", err);
-        }
-    }
-
-    async function fetchBookmakers() {
-        try {
-            const res = await fetch("/bookmakers");
-            const data = await res.json();
-            bookmakerSelect.innerHTML = "";
-            data.bookmakers.forEach(bk => {
-                const opt = document.createElement("option");
-                opt.value = bk;
-                opt.textContent = bk;
-                bookmakerSelect.appendChild(opt);
-            });
-            bookmakerSelect.value = data.default;
-            currentBookmaker = bookmakerSelect.value;
-        } catch (err) {
-            console.error("Error fetching bookmakers:", err);
-        }
-    }
-
-    function renderGame(game) {
-        const card = document.createElement("div");
-        card.className = "game-card";
-
-        const header = document.createElement("div");
-        header.className = "card-header";
-        const time = new Date(game.commence_time).toLocaleString();
-        header.textContent = `${game.away_team} @ ${game.home_team} — ${time}`;
-        card.appendChild(header);
-
-        const table = document.createElement("table");
-        table.className = "odds-table";
-
-        const headerRow = document.createElement("tr");
-        headerRow.innerHTML = `<th>Market</th><th>Team</th><th>Open</th><th>Live</th><th>Diff</th>`;
-        table.appendChild(headerRow);
-
-        const addRow = (market, team, open, live, diff) => {
-            const tr = document.createElement("tr");
-            tr.innerHTML = `
-                <td>${market}</td>
-                <td>${team}</td>
-                <td>${open ?? "-"}</td>
-                <td>${live ?? "-"}</td>
-                <td class="${diff > 0 ? 'diff-positive' : diff < 0 ? 'diff-negative' : ''}">
-                    ${diff ?? "-"}
-                </td>
-            `;
-            table.appendChild(tr);
-        };
-
-        // Moneyline
-        for (const team in game.moneyline) {
-            const ml = game.moneyline[team];
-            addRow("Moneyline", team, ml.open, ml.live, ml.diff);
-        }
-        // Spreads
-        for (const team in game.spreads) {
-            const sp = game.spreads[team];
-            const openText = sp.open_point !== undefined ? `${sp.open_point} (${sp.open_price})` : "-";
-            const liveText = sp.live_point !== undefined ? `${sp.live_point} (${sp.live_price})` : "-";
-            addRow("Spread", team, openText, liveText, sp.diff_point);
-        }
-        // Totals
-        for (const team in game.totals) {
-            const to = game.totals[team];
-            const openText = to.open_point !== undefined ? `${to.open_point} (${to.open_price})` : "-";
-            const liveText = to.live_point !== undefined ? `${to.live_point} (${to.live_price})` : "-";
-            addRow("Total", team, openText, liveText, to.diff_point);
-        }
-
-        card.appendChild(table);
-        return card;
-    }
-
-    async function fetchOdds() {
-        if (!currentSport || !currentBookmaker) return;
-        try {
-            const res = await fetch(`/odds/${currentSport}?bookmaker=${currentBookmaker}`);
-            const data = await res.json();
-            gamesContainer.innerHTML = "";
-            if (data.records && data.records.length > 0) {
-                data.records.forEach(game => {
-                    gamesContainer.appendChild(renderGame(game));
+            if (data.sports && data.sports.length > 0) {
+                data.sports.forEach((key) => {
+                    const opt = document.createElement("option");
+                    opt.value = key;
+                    opt.textContent = friendlySportName(key);
+                    sportSelect.appendChild(opt);
                 });
-            } else {
-                gamesContainer.textContent = "No games found.";
+                currentSport = sportSelect.value;
             }
-        } catch (err) {
-            console.error("Error fetching odds:", err);
-            gamesContainer.textContent = "Error loading odds.";
-        }
-    }
+        })
+        .catch((err) => console.error("Error loading sports:", err));
 
+    // Load bookmakers dropdown
+    fetch("/bookmakers")
+        .then((res) => res.json())
+        .then((data) => {
+            bookmakerSelect.innerHTML = "";
+            if (data.bookmakers && data.bookmakers.length > 0) {
+                data.bookmakers.forEach((bk) => {
+                    const opt = document.createElement("option");
+                    opt.value = bk;
+                    opt.textContent = bk;
+                    bookmakerSelect.appendChild(opt);
+                });
+                if (data.default) {
+                    bookmakerSelect.value = data.default;
+                }
+                currentBookmaker = bookmakerSelect.value;
+            }
+        })
+        .catch((err) => console.error("Error loading bookmakers:", err));
+
+    // Handle changes
     sportSelect.addEventListener("change", () => {
         currentSport = sportSelect.value;
-        fetchOdds();
+        loadOdds();
     });
 
     bookmakerSelect.addEventListener("change", () => {
         currentBookmaker = bookmakerSelect.value;
-        fetchOdds();
+        loadOdds();
     });
 
-    (async function init() {
-        await fetchSports();
-        await fetchBookmakers();
-        await fetchOdds();
-    })();
+    // Load odds
+    function loadOdds() {
+        if (!currentSport || !currentBookmaker) return;
+        oddsContainer.innerHTML = `<p>Loading odds for ${friendlySportName(currentSport)} (${currentBookmaker})...</p>`;
+        fetch(`/odds/${currentSport}?bookmaker=${currentBookmaker}`)
+            .then((res) => res.json())
+            .then((data) => {
+                if (!data.records || data.records.length === 0) {
+                    oddsContainer.innerHTML = `<p>No games found for ${friendlySportName(currentSport)}</p>`;
+                    return;
+                }
+                renderOdds(data.records);
+            })
+            .catch((err) => {
+                console.error("Error loading odds:", err);
+                oddsContainer.innerHTML = `<p>Error loading odds</p>`;
+            });
+    }
+
+    // Render odds
+    function renderOdds(records) {
+        oddsContainer.innerHTML = "";
+        records.forEach((game) => {
+            const card = document.createElement("div");
+            card.className = "game-card";
+
+            const header = document.createElement("h3");
+            const date = new Date(game.commence_time);
+            header.textContent = `${game.away_team} @ ${game.home_team} - ${date.toLocaleString()}`;
+            card.appendChild(header);
+
+            // Moneyline section
+            const mlSection = createMarketSection("Moneyline", game.moneyline, "price");
+            card.appendChild(mlSection);
+
+            // Spread section
+            const spreadSection = createMarketSection("Spread", game.spreads, "point");
+            card.appendChild(spreadSection);
+
+            // Total section
+            const totalSection = createMarketSection("Total", game.totals, "point");
+            card.appendChild(totalSection);
+
+            oddsContainer.appendChild(card);
+        });
+    }
+
+    function createMarketSection(title, marketData, diffType) {
+        const section = document.createElement("div");
+        section.className = "market-section";
+        const h4 = document.createElement("h4");
+        h4.textContent = title;
+        section.appendChild(h4);
+
+        for (const team in marketData) {
+            const row = document.createElement("div");
+            row.className = "market-row";
+
+            const tName = document.createElement("span");
+            tName.textContent = team;
+            row.appendChild(tName);
+
+            if (diffType === "price") {
+                row.appendChild(makeCell(marketData[team].open));
+                row.appendChild(makeCell(marketData[team].live));
+                row.appendChild(makeDiffCell(marketData[team].diff));
+            } else {
+                const md = marketData[team];
+                row.appendChild(makeCell(`${md.open_point ?? ""} (${md.open_price ?? ""})`));
+                row.appendChild(makeCell(`${md.live_point ?? ""} (${md.live_price ?? ""})`));
+                row.appendChild(makeDiffCell(md.diff_point));
+            }
+            section.appendChild(row);
+        }
+        return section;
+    }
+
+    function makeCell(val) {
+        const span = document.createElement("span");
+        span.textContent = val ?? "-";
+        return span;
+    }
+
+    function makeDiffCell(diff) {
+        const span = document.createElement("span");
+        if (diff == null) {
+            span.textContent = "-";
+        } else {
+            span.textContent = diff > 0 ? `+${diff}` : diff;
+            span.style.color = diff > 0 ? "green" : diff < 0 ? "red" : "black";
+        }
+        return span;
+    }
+
+    // Initial load
+    setTimeout(loadOdds, 500);
 });
