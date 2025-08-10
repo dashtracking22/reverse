@@ -3,12 +3,7 @@ const API_BASE = window.location.origin.replace(/\/+$/, "");
 // Local fallback list so the Sport dropdown works even if /sports fails
 const FALLBACK_SPORTS = [
   "americanfootball_ncaaf",
-  "americanfootball_nfl",
-  "basketball_nba",
-  "basketball_wnba",
-  "mma_mixed_martial_arts",
-  "baseball_mlb",
-];
+const API_BASE = window.location.origin.replace(/\/+$/, "");
 
 const sportSelect = document.getElementById("sportSelect");
 const bookmakerSelect = document.getElementById("bookmakerSelect");
@@ -31,28 +26,9 @@ function signed(val){
 }
 
 async function initControls(){
-  let sportKeys = [];
-
-  // Try the backend /sports first
-  try {
-    const sportsResp = await fetch(`${API_BASE}/sports`).then(r=>r.json());
-    if (Array.isArray(sportsResp?.sports)) {
-      sportKeys = sportsResp.sports;
-    } else if (Array.isArray(sportsResp)) {
-      // tolerate raw Odds API array [{key,...}]
-      sportKeys = sportsResp.map(s=>s.key).filter(Boolean);
-    }
-  } catch (_) {
-    // ignore; we'll fall back
-  }
-
-  // If backend didn't provide keys, use local fallback
-  if (!sportKeys.length) {
-    console.warn("Using FALLBACK_SPORTS for dropdown");
-    sportKeys = FALLBACK_SPORTS.slice();
-  }
-
-  // Populate sport dropdown
+  // Sports (expects {"sports":[...]})
+  const sportsResp = await fetch(`${API_BASE}/sports`).then(r=>r.json());
+  const sportKeys = Array.isArray(sportsResp?.sports) ? sportsResp.sports : [];
   sportSelect.innerHTML = "";
   sportKeys.forEach(s=>{
     const opt = document.createElement("option");
@@ -60,12 +36,8 @@ async function initControls(){
     sportSelect.appendChild(opt);
   });
 
-  // Bookmakers
-  let books = { bookmakers: [], default: "" };
-  try {
-    books = await fetch(`${API_BASE}/bookmakers`).then(r=>r.json());
-  } catch (_) {}
-
+  // Bookmakers (expects {"bookmakers":[...], "default":"..."})
+  const books = await fetch(`${API_BASE}/bookmakers`).then(r=>r.json());
   bookmakerSelect.innerHTML = "";
   (books.bookmakers || []).forEach(b=>{
     const opt = document.createElement("option");
@@ -198,7 +170,4 @@ async function loadAndRender(){
   await initControls();
   if (sportSelect.options.length){ sportSelect.value = sportSelect.options[0].value; }
   refreshBtn.addEventListener("click", loadAndRender);
-  sportSelect.addEventListener("change", loadAndRender);
-  bookmakerSelect.addEventListener("change", loadAndRender);
-  loadAndRender();
-})();
+  sportSelect.addEventListener("change", lo

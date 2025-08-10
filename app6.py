@@ -31,15 +31,15 @@ BOOKMAKERS = [
     "betonlineag",
     "draftkings",
     "fanduel",
+    "pointsbetus",
     "caesars",
     "betmgm",
-    "pointsbetus",
     "wynnbet",
 ]
 
 MARKETS = ["h2h", "spreads", "totals"]
 
-# --------- Simple cache ----------
+# --------- Simple in-proc cache ----------
 _cache_lock = threading.Lock()
 _cache: Dict[str, Dict[str, Any]] = {}
 
@@ -277,7 +277,7 @@ def root():
 
 @app.route("/sports")
 def sports():
-    # Log hits so we can see this in Render logs
+    """Normalize to keys so the dropdown always fills."""
     app.logger.info("HIT /sports")
     try:
         r = requests.get(
@@ -297,6 +297,7 @@ def sports():
 
 @app.route("/bookmakers")
 def bookmakers():
+    """Plain, fixed shape for the UI."""
     return jsonify({"bookmakers": BOOKMAKERS, "default": DEFAULT_BOOKMAKER})
 
 @app.route("/odds/<sport>")
@@ -321,6 +322,18 @@ def odds_for_sport(sport: str):
         return jsonify({"error": "Odds API error", "status": status, "details": str(e)}), status
     except Exception as e:
         return jsonify({"error": "Server error", "details": str(e)}), 500
+
+@app.route("/routes")
+def routes():
+    """Diagnostics: list registered routes."""
+    try:
+        rules = []
+        for r in app.url_map.iter_rules():
+            methods = ",".join(sorted(m for m in r.methods if m not in ("HEAD", "OPTIONS")))
+            rules.append({"rule": str(r), "endpoint": r.endpoint, "methods": methods})
+        return jsonify({"routes": rules})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/health")
 def health():
