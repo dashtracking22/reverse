@@ -6,23 +6,25 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 import requests
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
-API_KEY = os.getenv("API_KEY")  # <-- set this in your env; do NOT hardcode
+API_KEY = os.getenv("API_KEY")  # REQUIRED
 REGION = "us"
-ODDS_FORMAT = "american"  # ensure prices come back as American
+ODDS_FORMAT = "american"
 CACHE_SECONDS = 20
 
+# You may include NBA here; remove any you don't want.
 ALLOWED_SPORTS = [
     "baseball_mlb",
     "mma_mixed_martial_arts",
     "basketball_wnba",
+    "basketball_nba",
     "americanfootball_nfl",
-    "americanfootball_ncaaf"
+    "americanfootball_ncaaf",
 ]
 
 DEFAULT_BOOKMAKER = "betonlineag"
@@ -33,14 +35,14 @@ BOOKMAKERS = [
     "caesars",
     "betmgm",
     "pointsbetus",
-    "wynnbet"
+    "wynnbet",
 ]
 
 MARKETS = ["h2h", "spreads", "totals"]
 
-# --------- Simple in-process cache to reduce API calls ----------
+# --------- Simple cache ----------
 _cache_lock = threading.Lock()
-_cache: Dict[str, Dict[str, Any]] = {}  # {key: {"data":..., "ts":...}}
+_cache: Dict[str, Dict[str, Any]] = {}
 
 def get_cache(key: str):
     with _cache_lock:
@@ -55,7 +57,7 @@ def set_cache(key: str, data: Any):
     with _cache_lock:
         _cache[key] = {"data": data, "ts": time.time()}
 
-# --------- Persistence (Redis via Upstash REST or local JSON) ----------
+# --------- Persistence (Upstash Redis or local JSON) ----------
 UPSTASH_URL = os.getenv("UPSTASH_REDIS_REST_URL")
 UPSTASH_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN")
 
@@ -70,7 +72,6 @@ def _safe_load_json(path: str) -> Dict[str, Any]:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f) or {}
         except Exception:
-            # recover by resetting bad file
             try:
                 with open(path, "w", encoding="utf-8") as f:
                     f.write("{}")
@@ -86,24 +87,18 @@ def _safe_save_json(path: str, data: Dict[str, Any]):
         os.replace(tmp, path)
 
 def _redis_setnx(key: str, value: str) -> bool:
-    """
-    Returns True if key was set (did not exist), False if it already existed.
-    Uses Upstash REST if configured; otherwise local JSON with set-once semantics.
-    """
+    """True if set (didn't exist). Uses Upstash REST GET endpoints or local file fallback."""
     if UPSTASH_URL and UPSTASH_TOKEN:
         url = f"{UPSTASH_URL}/setnx/{key}/{value}"
         headers = {"Authorization": f"Bearer {UPSTASH_TOKEN}"}
-        r = requests.post(url, headers=headers, timeout=10)
+        r = requests.get(url, headers=headers, timeout=10)  # GET to avoid 405s
         r.raise_for_status()
-        # Upstash returns integer 1/0
         try:
             return bool(int(r.text.strip()))
         except Exception:
-            # Some deployments return JSON like {"result":1}
             j = r.json()
             return bool(j.get("result", 0))
 
-    # Fallback: local file set-once
     data = _safe_load_json(ODDS_LOG_PATH)
     if key in data:
         return False
@@ -119,19 +114,14 @@ def _redis_get(key: str) -> Optional[str]:
         if r.status_code == 404:
             return None
         r.raise_for_status()
-        # Upstash returns JSON like {"result":"..."} or nil
         j = r.json()
         return j.get("result")
     data = _safe_load_json(ODDS_LOG_PATH)
-    val = data.get(key)
-    return val
+    return data.get(key)
 
 def _persist_opening_once(key: str, payload: Dict[str, Any]):
-    """
-    payload stored as JSON string under immutable key via SETNX semantics.
-    """
     value = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
-    _redis_setnx(key, value)  # ignore return; we only need it set once
+    _redis_setnx(key, value)
 
 def _get_opening_payload(key: str) -> Optional[Dict[str, Any]]:
     raw = _redis_get(key)
@@ -150,13 +140,12 @@ def fetch_odds(sport: str, bookmaker: str) -> Any:
     cached = get_cache(cache_key)
     if cached:
         return cached
-
     params = {
         "apiKey": API_KEY,
         "regions": REGION,
         "markets": ",".join(MARKETS),
         "bookmakers": bookmaker,
-        "oddsFormat": ODDS_FORMAT
+        "oddsFormat": ODDS_FORMAT,
     }
     url = f"{BASE}/sports/{sport}/odds"
     r = requests.get(url, params=params, timeout=25)
@@ -173,7 +162,6 @@ def american_diff(curr: Optional[int], opening: Optional[int]) -> Optional[int]:
 def point_diff(curr: Optional[float], opening: Optional[float]) -> Optional[float]:
     if curr is None or opening is None:
         return None
-    # Show with sign (e.g., -2.5 -> -3.5 = -1.0)
     return round(curr - opening, 2)
 
 def safe_int(x):
@@ -189,8 +177,7 @@ def safe_float(x):
         return None
 
 def make_key(sport: str, event_id: str, market: str, selection: str, bookmaker: str) -> str:
-    # Normalize selection to avoid spaces issues in Redis keys
-    sel = selection.replace(" ", "_").lower()
+    sel = (selection or "").replace(" ", "_").lower()
     return f"open:{sport}:{event_id}:{market}:{sel}:{bookmaker}"
 
 def extract_bookmaker_block(event: Dict[str, Any], bookmaker: str) -> Optional[Dict[str, Any]]:
@@ -200,13 +187,6 @@ def extract_bookmaker_block(event: Dict[str, Any], bookmaker: str) -> Optional[D
     return None
 
 def normalize_event_record(sport: str, event: Dict[str, Any], bookmaker: str) -> Dict[str, Any]:
-    """
-    Produce one consolidated record with:
-    - moneyline (per team)
-    - spreads (per team with point)
-    - totals (Over/Under with point)
-    Persist and read opening odds as needed.
-    """
     event_id = event.get("id")
     commence = event.get("commence_time")
     home = event.get("home_team")
@@ -217,9 +197,9 @@ def normalize_event_record(sport: str, event: Dict[str, Any], bookmaker: str) ->
         "commence_time": commence,
         "home_team": home,
         "away_team": away,
-        "moneyline": {},  # {team: {open, live, diff}}
-        "spreads": {},    # {team: {open_point, open_price, live_point, live_price, diff_point}}
-        "totals": {}      # {"Over": {...}, "Under": {...}}
+        "moneyline": {},
+        "spreads": {},
+        "totals": {}
     }
 
     bk = extract_bookmaker_block(event, bookmaker)
@@ -236,18 +216,116 @@ def normalize_event_record(sport: str, event: Dict[str, Any], bookmaker: str) ->
                 sel_key = make_key(sport, event_id, "h2h", name, bookmaker)
                 opening = _get_opening_payload(sel_key)
                 if not opening:
-                    _persist_opening_once(sel_key, {
-                        "opening_price": price,
-                        "ts": int(time.time())
-                    })
+                    _persist_opening_once(sel_key, {"opening_price": price, "ts": int(time.time())})
                     opening = {"opening_price": price}
                 out["moneyline"][name] = {
                     "open": opening.get("opening_price"),
                     "live": price,
-                    "diff": american_diff(price, opening.get("opening_price"))
+                    "diff": american_diff(price, opening.get("opening_price")),
                 }
 
         elif mkey == "spreads":
             for o in outcomes:
-                name = o.get("name")  # team name
-                price = sa
+                name = o.get("name")
+                price = safe_int(o.get("price"))
+                point = safe_float(o.get("point"))
+                sel_key = make_key(sport, event_id, "spreads", name, bookmaker)
+                opening = _get_opening_payload(sel_key)
+                if not opening:
+                    _persist_opening_once(sel_key, {
+                        "opening_point": point,
+                        "opening_price": price,
+                        "ts": int(time.time())
+                    })
+                    opening = {"opening_point": point, "opening_price": price}
+                out["spreads"][name] = {
+                    "open_point": opening.get("opening_point"),
+                    "open_price": opening.get("opening_price"),
+                    "live_point": point,
+                    "live_price": price,
+                    "diff_point": point_diff(point, opening.get("opening_point")),
+                }
+
+        elif mkey == "totals":
+            for o in outcomes:
+                name = o.get("name")  # "Over" / "Under"
+                price = safe_int(o.get("price"))
+                point = safe_float(o.get("point"))
+                sel_key = make_key(sport, event_id, "totals", name, bookmaker)
+                opening = _get_opening_payload(sel_key)
+                if not opening:
+                    _persist_opening_once(sel_key, {
+                        "opening_point": point,
+                        "opening_price": price,
+                        "ts": int(time.time())
+                    })
+                    opening = {"opening_point": point, "opening_price": price}
+                out["totals"][name] = {
+                    "open_point": opening.get("opening_point"),
+                    "open_price": opening.get("opening_price"),
+                    "live_point": point,
+                    "live_price": price,
+                    "diff_point": point_diff(point, opening.get("opening_point")),
+                }
+
+    return out
+
+# ------------------ Routes ------------------
+
+@app.route("/")
+def root():
+    return send_from_directory("templates", "betkarma2.html")
+
+@app.route("/sports")
+def sports():
+    """Return just the active sport keys for the dropdown."""
+    try:
+        r = requests.get(
+            f"{BASE}/sports",
+            params={"apiKey": API_KEY, "all": "false"},
+            timeout=15
+        )
+        r.raise_for_status()
+        arr = r.json()
+        keys = [x.get("key") for x in arr if x.get("active")]
+        # Optionally filter to ALLOWED_SPORTS intersection:
+        keys = [k for k in keys if k in ALLOWED_SPORTS]
+        return jsonify({"sports": keys})
+    except Exception:
+        # Fallback
+        return jsonify({"sports": ALLOWED_SPORTS, "note": "fallback"}), 200
+
+@app.route("/bookmakers")
+def bookmakers():
+    return jsonify({"bookmakers": BOOKMAKERS, "default": DEFAULT_BOOKMAKER})
+
+@app.route("/odds/<sport>")
+def odds_for_sport(sport: str):
+    if sport not in ALLOWED_SPORTS:
+        return jsonify({"error": "Unsupported sport"}), 400
+    bookmaker = request.args.get("bookmaker", DEFAULT_BOOKMAKER)
+    if not API_KEY:
+        return jsonify({"error": "API_KEY missing"}), 500
+    try:
+        data = fetch_odds(sport, bookmaker)
+        records = [normalize_event_record(sport, e, bookmaker) for e in data]
+        def _ts(x):
+            try:
+                return datetime.fromisoformat(x.get("commence_time").replace("Z",""))
+            except Exception:
+                return datetime.max
+        records.sort(key=_ts)
+        return jsonify({"sport": sport, "bookmaker": bookmaker, "records": records})
+    except requests.HTTPError as e:
+        status = e.response.status_code if e.response else 500
+        return jsonify({"error": "Odds API error", "status": status, "details": str(e)}), status
+    except Exception as e:
+        return jsonify({"error": "Server error", "details": str(e)}), 500
+
+@app.route("/health")
+def health():
+    return jsonify({"ok": True})
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", "5050"))  # Render provides PORT
+    app.run(host="0.0.0.0", port=port, debug=True)

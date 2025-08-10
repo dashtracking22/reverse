@@ -1,4 +1,4 @@
-const API_BASE = window.location.origin.replace(/\/+$/, ""); // same host/port as Flask
+const API_BASE = window.location.origin.replace(/\/+$/, "");
 
 const sportSelect = document.getElementById("sportSelect");
 const bookmakerSelect = document.getElementById("bookmakerSelect");
@@ -15,27 +15,33 @@ function isoToLocal(iso){
 }
 
 async function initControls(){
-  const [sports, books] = await Promise.all([
+  const [sportsResp, books] = await Promise.all([
     fetch(`${API_BASE}/sports`).then(r=>r.json()),
     fetch(`${API_BASE}/bookmakers`).then(r=>r.json())
   ]);
-  // Sports
+
+  // Accept {sports:[...]} or raw array of objects
+  let sportKeys = [];
+  if (Array.isArray(sportsResp)) {
+    sportKeys = sportsResp.map(s => s.key).filter(Boolean);
+  } else if (Array.isArray(sportsResp.sports)) {
+    sportKeys = sportsResp.sports;
+  }
+
   sportSelect.innerHTML = "";
-  (sports.sports || []).forEach(s=>{
+  sportKeys.forEach(s=>{
     const opt = document.createElement("option");
     opt.value = s; opt.textContent = s;
     sportSelect.appendChild(opt);
   });
-  // Bookmakers
+
   bookmakerSelect.innerHTML = "";
   (books.bookmakers || []).forEach(b=>{
     const opt = document.createElement("option");
     opt.value = b; opt.textContent = b;
     bookmakerSelect.appendChild(opt);
   });
-  if(books.default){
-    bookmakerSelect.value = books.default;
-  }
+  if(books.default){ bookmakerSelect.value = books.default; }
 }
 
 function renderRecords(records){
@@ -134,7 +140,7 @@ async function loadAndRender(){
   const res = await fetch(url);
   if(!res.ok){
     const err = await res.json().catch(()=>({}));
-    cardsContainer.innerHTML = `<div class="card"><div class="card-header"><div class="matchup">Error</div><div class="time"></div></div><div class="sections"><div class="section"><div>${err.error || res.status}</div></div></div></div>`;
+    cardsContainer.innerHTML = `<div class="card"><div class="card-header"><div class="matchup">Error</div></div><div class="sections"><div class="section"><div>${err.error || res.status}</div></div></div></div>`;
     return;
   }
   const data = await res.json();
@@ -143,10 +149,7 @@ async function loadAndRender(){
 
 (async function(){
   await initControls();
-  // defaults
-  if (Array.from(sportSelect.options).length){
-    sportSelect.value = sportSelect.options[0].value;
-  }
+  if (sportSelect.options.length){ sportSelect.value = sportSelect.options[0].value; }
   refreshBtn.addEventListener("click", loadAndRender);
   sportSelect.addEventListener("change", loadAndRender);
   bookmakerSelect.addEventListener("change", loadAndRender);
