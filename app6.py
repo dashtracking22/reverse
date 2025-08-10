@@ -12,19 +12,18 @@ from flask_cors import CORS
 app = Flask(__name__, template_folder="templates", static_folder="static")
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-API_KEY = os.getenv("API_KEY")  # REQUIRED
+API_KEY = os.getenv("API_KEY")  # REQUIRED on Render
 REGION = "us"
 ODDS_FORMAT = "american"
 CACHE_SECONDS = 20
 
-# You may include NBA here; remove any you don't want.
 ALLOWED_SPORTS = [
-    "baseball_mlb",
-    "mma_mixed_martial_arts",
-    "basketball_wnba",
-    "basketball_nba",
-    "americanfootball_nfl",
     "americanfootball_ncaaf",
+    "americanfootball_nfl",
+    "basketball_nba",
+    "basketball_wnba",
+    "mma_mixed_martial_arts",
+    "baseball_mlb",
 ]
 
 DEFAULT_BOOKMAKER = "betonlineag"
@@ -91,7 +90,7 @@ def _redis_setnx(key: str, value: str) -> bool:
     if UPSTASH_URL and UPSTASH_TOKEN:
         url = f"{UPSTASH_URL}/setnx/{key}/{value}"
         headers = {"Authorization": f"Bearer {UPSTASH_TOKEN}"}
-        r = requests.get(url, headers=headers, timeout=10)  # GET to avoid 405s
+        r = requests.get(url, headers=headers, timeout=10)  # GET avoids 405s on some setups
         r.raise_for_status()
         try:
             return bool(int(r.text.strip()))
@@ -132,7 +131,7 @@ def _get_opening_payload(key: str) -> Optional[Dict[str, Any]]:
     except Exception:
         return None
 
-# --------- Odds API helpers ----------
+# --------- Odds API ----------
 BASE = "https://api.the-odds-api.com/v4"
 
 def fetch_odds(sport: str, bookmaker: str) -> Any:
@@ -278,7 +277,7 @@ def root():
 
 @app.route("/sports")
 def sports():
-    """Return just the active sport keys for the dropdown."""
+    """Normalize to keys so the dropdown always fills."""
     try:
         r = requests.get(
             f"{BASE}/sports",
@@ -288,11 +287,9 @@ def sports():
         r.raise_for_status()
         arr = r.json()
         keys = [x.get("key") for x in arr if x.get("active")]
-        # Optionally filter to ALLOWED_SPORTS intersection:
         keys = [k for k in keys if k in ALLOWED_SPORTS]
         return jsonify({"sports": keys})
     except Exception:
-        # Fallback
         return jsonify({"sports": ALLOWED_SPORTS, "note": "fallback"}), 200
 
 @app.route("/bookmakers")

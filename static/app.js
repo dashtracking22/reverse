@@ -3,7 +3,7 @@ const API_BASE = window.location.origin.replace(/\/+$/, "");
 const sportSelect = document.getElementById("sportSelect");
 const bookmakerSelect = document.getElementById("bookmakerSelect");
 const refreshBtn = document.getElementById("refreshBtn");
-const cardsContainer = document.getElementById("cardsContainer");
+const content = document.getElementById("content");
 
 function isoToLocal(iso){
   if(!iso) return "";
@@ -14,19 +14,22 @@ function isoToLocal(iso){
   }catch(e){ return ""; }
 }
 
+function signed(val){
+  if(val == null || isNaN(val)) return "-";
+  const n = Number(val);
+  return (n > 0 ? `+${n}` : `${n}`);
+}
+
 async function initControls(){
   const [sportsResp, books] = await Promise.all([
     fetch(`${API_BASE}/sports`).then(r=>r.json()),
     fetch(`${API_BASE}/bookmakers`).then(r=>r.json())
   ]);
 
-  // Accept {sports:[...]} or raw array of objects
+  // /sports returns {"sports":[...]} (our backend); tolerate raw arrays just in case
   let sportKeys = [];
-  if (Array.isArray(sportsResp)) {
-    sportKeys = sportsResp.map(s => s.key).filter(Boolean);
-  } else if (Array.isArray(sportsResp.sports)) {
-    sportKeys = sportsResp.sports;
-  }
+  if (Array.isArray(sportsResp?.sports)) sportKeys = sportsResp.sports;
+  else if (Array.isArray(sportsResp)) sportKeys = sportsResp.map(s=>s.key).filter(Boolean);
 
   sportSelect.innerHTML = "";
   sportKeys.forEach(s=>{
@@ -44,107 +47,122 @@ async function initControls(){
   if(books.default){ bookmakerSelect.value = books.default; }
 }
 
-function renderRecords(records){
-  cardsContainer.innerHTML = "";
+function rowDiffClass(v){
+  if (v == null || isNaN(v)) return "";
+  return Number(v) >= 0 ? "diff pos" : "diff neg";
+}
+
+function renderTable(title, rowsHtml){
+  return `
+    <div class="section">
+      <h3>${title}</h3>
+      <table class="table">
+        <thead>
+          <tr><th>Team</th><th class="num">Open</th><th class="num">Live</th><th class="num">Diff</th></tr>
+        </thead>
+        <tbody>
+          ${rowsHtml || `<tr><td colspan="4" style="color:#6b7280">No data</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function fmtPriceMaybe(x){ return (x==null || x===undefined) ? "-" : x; }
+function fmtPointWithPrice(point, price){
+  const p = (point==null || point===undefined) ? "-" : point;
+  const pr = (price==null || price===undefined) ? "-" : price;
+  return `${p} (${pr})`;
+}
+
+function render(records){
+  content.innerHTML = "";
   if(!records || !records.length){
-    cardsContainer.innerHTML = `<div class="card"><div class="card-header"><div class="matchup">No games</div></div></div>`;
+    content.innerHTML = `<div class="game"><div class="title">No games</div></div>`;
     return;
   }
+
   records.forEach(rec=>{
-    const title = `${rec.away_team || "Away"} @ ${rec.home_team || "Home"}`;
+    const matchup = `${rec.away_team || "Away"} vs ${rec.home_team || "Home"}`;
     const when = isoToLocal(rec.commence_time);
 
-    const moneylineRows = [];
-    for(const [team, vals] of Object.entries(rec.moneyline || {})){
-      const diff = vals.diff;
-      moneylineRows.push(`
-        <div class="tr">
-          <div class="team">${team}</div>
-          <div class="val mono">${vals.open ?? "-"}</div>
-          <div class="val mono">${vals.live ?? "-"}</div>
-          <div class="diff mono ${diff == null ? "" : (diff >= 0 ? "pos":"neg")}">${diff ?? "-"}</div>
-        </div>
-      `);
-    }
+    // Moneyline
+    let mlRows = "";
+    Object.entries(rec.moneyline || {}).forEach(([team, vals])=>{
+      const d = vals.diff;
+      mlRows += `
+        <tr>
+          <td>${team}</td>
+          <td class="num">${fmtPriceMaybe(vals.open)}</td>
+          <td class="num">${fmtPriceMaybe(vals.live)}</td>
+          <td class="num ${rowDiffClass(d)}">${d==null? "-": signed(d)}</td>
+        </tr>
+      `;
+    });
 
-    const spreadRows = [];
-    for(const [team, v] of Object.entries(rec.spreads || {})){
-      const diff = v.diff_point;
-      spreadRows.push(`
-        <div class="tr">
-          <div class="team">${team}</div>
-          <div class="val mono">${v.open_point ?? "-" } (${v.open_price ?? "-"})</div>
-          <div class="val mono">${v.live_point ?? "-" } (${v.live_price ?? "-"})</div>
-          <div class="diff mono ${diff == null ? "" : (diff >= 0 ? "pos":"neg")}">${diff ?? "-"}</div>
-        </div>
-      `);
-    }
+    // Spread (point diff only)
+    let spRows = "";
+    Object.entries(rec.spreads || {}).forEach(([team, v])=>{
+      const d = v.diff_point;
+      spRows += `
+        <tr>
+          <td>${team}</td>
+          <td class="num">${fmtPointWithPrice(v.open_point, v.open_price)}</td>
+          <td class="num">${fmtPointWithPrice(v.live_point, v.live_price)}</td>
+          <td class="num ${rowDiffClass(d)}">${d==null? "-": signed(d)}</td>
+        </tr>
+      `;
+    });
 
-    const totalRows = [];
-    for(const side of ["Over","Under"]){
-      const v = (rec.totals || {})[side];
-      if(!v) continue;
-      const diff = v.diff_point;
-      totalRows.push(`
-        <div class="tr">
-          <div class="team">${side}</div>
-          <div class="val mono">${v.open_point ?? "-" } (${v.open_price ?? "-"})</div>
-          <div class="val mono">${v.live_point ?? "-" } (${v.live_price ?? "-"})</div>
-          <div class="diff mono ${diff == null ? "" : (diff >= 0 ? "pos":"neg")}">${diff ?? "-"}</div>
-        </div>
-      `);
-    }
+    // Totals (point diff only) — Over/Under rows
+    let totRows = "";
+    ["Over","Under"].forEach(side=>{
+      const v = (rec.totals||{})[side];
+      if(!v) return;
+      const d = v.diff_point;
+      totRows += `
+        <tr>
+          <td>${side}</td>
+          <td class="num">${fmtPointWithPrice(v.open_point, v.open_price)}</td>
+          <td class="num">${fmtPointWithPrice(v.live_point, v.live_price)}</td>
+          <td class="num ${rowDiffClass(d)}">${d==null? "-": signed(d)}</td>
+        </tr>
+      `;
+    });
 
-    const card = document.createElement("div");
-    card.className = "card";
-    card.innerHTML = `
-      <div class="card-header">
-        <div class="matchup">${title}</div>
-        <div class="time">${when}</div>
+    const gameEl = document.createElement("div");
+    gameEl.className = "game";
+    gameEl.innerHTML = `
+      <div class="title">
+        <span class="when">${when}</span> — <span>${matchup}</span>
       </div>
-      <div class="sections">
-        <div class="section">
-          <h4>Moneyline</h4>
-          <div class="th">
-            <div>Team</div><div class="val">Open</div><div class="val">Live</div><div class="val">Diff</div>
-          </div>
-          ${moneylineRows.join("") || `<div class="tr"><div>No data</div></div>`}
-        </div>
-
-        <div class="section">
-          <h4>Spread</h4>
-          <div class="th">
-            <div>Team</div><div class="val">Open</div><div class="val">Live</div><div class="val">Diff</div>
-          </div>
-          ${spreadRows.join("") || `<div class="tr"><div>No data</div></div>`}
-        </div>
-
-        <div class="section">
-          <h4>Total</h4>
-          <div class="th">
-            <div>Side</div><div class="val">Open</div><div class="val">Live</div><div class="val">Diff</div>
-          </div>
-          ${totalRows.join("") || `<div class="tr"><div>No data</div></div>`}
-        </div>
-      </div>
+      ${renderTable("Moneyline", mlRows)}
+      ${renderTable("Spread", spRows)}
+      ${renderTable("Total", totRows)}
     `;
-    cardsContainer.appendChild(card);
+    content.appendChild(gameEl);
   });
 }
 
 async function loadAndRender(){
   const sport = sportSelect.value;
   const bookmaker = bookmakerSelect.value;
-  cardsContainer.innerHTML = "";
+  content.innerHTML = "";
+
+  if(!sport){
+    content.innerHTML = `<div class="game"><div class="title">Choose a sport</div></div>`;
+    return;
+  }
+
   const url = `${API_BASE}/odds/${encodeURIComponent(sport)}?bookmaker=${encodeURIComponent(bookmaker)}`;
   const res = await fetch(url);
   if(!res.ok){
     const err = await res.json().catch(()=>({}));
-    cardsContainer.innerHTML = `<div class="card"><div class="card-header"><div class="matchup">Error</div></div><div class="sections"><div class="section"><div>${err.error || res.status}</div></div></div></div>`;
+    content.innerHTML = `<div class="game"><div class="title">Error: ${err.error || res.status}</div></div>`;
     return;
   }
   const data = await res.json();
-  renderRecords(data.records || []);
+  render(data.records || []);
 }
 
 (async function(){
