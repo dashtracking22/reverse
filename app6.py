@@ -2,6 +2,7 @@ import os
 import json
 import time
 import threading
+import logging
 from datetime import datetime
 from typing import Any, Dict, Optional, List, Tuple
 
@@ -13,10 +14,14 @@ from flask_cors import CORS
 app = Flask(__name__, template_folder="templates", static_folder="static")
 CORS(app, resources={r"/*": {"origins": "*"}})
 
+# -------- Config --------
 API_KEY = os.getenv("API_KEY")  # REQUIRED on Render
 REGION = "us"
 ODDS_FORMAT = "american"
 CACHE_SECONDS = 60
+
+# Enable verbose logging by setting OPENINGS_DEBUG=1
+OPENINGS_DEBUG = os.getenv("OPENINGS_DEBUG", "0") in ("1", "true", "True")
 
 # Sports keys (primary uses americanfootball_ncaa; tolerate _ncaaf)
 ALLOWED_SPORTS = [
@@ -41,12 +46,24 @@ BOOKMAKERS = [
 ]
 MARKETS = ["h2h", "spreads", "totals"]
 
-# --------- HTTP connection pooling ----------
+# -------- Logging --------
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("openings")
+if OPENINGS_DEBUG:
+    log.setLevel(logging.DEBUG)
+
+def dlog(msg: str, **kwargs):
+    if OPENINGS_DEBUG:
+        if kwargs:
+            msg = f"{msg} | " + " ".join(f"{k}={kwargs[k]!r}" for k in kwargs)
+        log.debug(msg)
+
+# -------- HTTP connection pooling --------
 HTTP = requests.Session()
 HTTP.mount("https://", HTTPAdapter(pool_connections=50, pool_maxsize=50))
 HTTP.mount("http://", HTTPAdapter(pool_connections=50, pool_maxsize=50))
 
-# --------- Simple in-proc cache ----------
+# -------- Simple in-proc cache --------
 _cache_lock = threading.Lock()
 _cache: Dict[str, Dict[str, Any]] = {}
 def get_cache(key: str):
@@ -59,7 +76,7 @@ def set_cache(key: str, data: Any):
     with _cache_lock:
         _cache[key] = {"data": data, "ts": time.time()}
 
-# --------- Opening odds store (RAM/file, plus Redis setnx as source of truth) ----------
+# -------- Opening odds store (RAM/file + Redis SETNX) --------
 UPSTASH_URL = os.getenv("UPSTASH_REDIS_REST_URL")
 UPSTASH_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN")
 ODDS_LOG_PATH = "odds_log.json"
@@ -98,7 +115,8 @@ def _redis_get(key: str) -> Optional[str]:
         r.raise_for_status()
         j = r.json()
         return j.get("result")
-    except Exception:
+    except Exception as e:
+        dlog("redis_get_error", key=key, error=str(e))
         return None
 
 # Async Redis writer (non-blocking setnx)
@@ -114,20 +132,19 @@ def _start_redis_worker():
     def _worker():
         while True:
             try:
-                batch = []
                 with _redis_q_lock:
-                    if _redis_queue:
-                        batch = _redis_queue[:500]
-                        del _redis_queue[:500]
+                    batch = _redis_queue[:500]
+                    del _redis_queue[:500]
                 if not batch:
                     time.sleep(0.5)
                     continue
                 for k, v in batch:
                     try:
                         url = f"{UPSTASH_URL}/setnx/{k}/{v}"
-                        HTTP.get(url, headers={"Authorization": f"Bearer {UPSTASH_TOKEN}"}, timeout=5)
-                    except Exception:
-                        pass
+                        r = HTTP.get(url, headers={"Authorization": f"Bearer {UPSTASH_TOKEN}"}, timeout=5)
+                        dlog("redis_setnx_attempt", key=k, status=r.status_code)
+                    except Exception as e:
+                        dlog("redis_setnx_error", key=k, error=str(e))
             except Exception:
                 time.sleep(1.0)
     t = threading.Thread(target=_worker, daemon=True)
@@ -139,7 +156,7 @@ class OpeningsStore:
     """
     Request-scoped store:
       - Loads local file dict once.
-      - get(key): RAM -> file -> Redis(GET). If Redis returns a value, memoize it in RAM (and keep file clean).
+      - get(key): RAM -> file -> Redis(GET). Memoize result in RAM dict.
       - setnx(key, payload): record in RAM; flush to file at end; queue Redis SETNX async.
       - flush_if_needed(): writes file once if anything new was added.
     """
@@ -152,45 +169,53 @@ class OpeningsStore:
         if raw:
             if isinstance(raw, str):
                 try:
-                    return json.loads(raw)
+                    opening = json.loads(raw)
                 except Exception:
-                    return None
-            return raw
+                    opening = None
+            else:
+                opening = raw
+            dlog("opening_get_local_hit", key=key, opening=opening)
+            return opening
 
-        # Not in file: try Redis GET once (fast path for cross-restart or multi-instance)
+        # Not in local file: try Redis
         raw_redis = _redis_get(key)
         if raw_redis:
             try:
                 parsed = json.loads(raw_redis)
-            except Exception:
+                # memoize in RAM dict
+                self._dict[key] = parsed
+                dlog("opening_get_redis_hit", key=key, opening=parsed)
+                return parsed
+            except Exception as e:
+                dlog("opening_get_redis_parse_error", key=key, error=str(e))
                 return None
-            # memoize in RAM dict (do not mark dirty; we didn't create it)
-            self._dict[key] = parsed
-            return parsed
 
+        dlog("opening_get_miss", key=key)
         return None
 
     def setnx(self, key: str, payload: Dict[str, Any]):
         if key in self._dict:
+            dlog("opening_setnx_skipped_exists_local", key=key)
             return
-        # write-through to memory (for the remainder of this request)
         self._dict[key] = payload
         self._dirty = True
+        dlog("opening_setnx_local", key=key, payload=payload)
         # queue Redis write (stringify)
         try:
             if UPSTASH_URL and UPSTASH_TOKEN:
                 v = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
                 with _redis_q_lock:
                     _redis_queue.append((key, v))
-        except Exception:
-            pass
+        except Exception as e:
+            dlog("opening_setnx_queue_error", key=key, error=str(e))
 
     def flush_if_needed(self):
         if self._dirty:
             _save_file_dict(ODDS_LOG_PATH, self._dict)
+            dlog("opening_flush_file", path=ODDS_LOG_PATH)
             self._dirty = False
 
-# --------- Odds API ----------
+# -------- Odds API --------
 BASE = "https://api.the-odds-api.com/v4"
 def fetch_odds(sport: str, bookmaker: str) -> Any:
     cache_key = f"odds_raw:{sport}:{bookmaker}"
@@ -247,7 +272,8 @@ def normalize_event_record(
     store: OpeningsStore,
     sport: str,
     event: Dict[str, Any],
-    bookmaker: str
+    bookmaker: str,
+    dbg: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     event_id = event.get("id")
     commence = event.get("commence_time")
@@ -280,11 +306,16 @@ def normalize_event_record(
                 if not opening:
                     opening = {"opening_price": price, "ts": int(time.time())}
                     store.setnx(sel_key, opening)
+                    dlog("opening_set_h2h_first_time", key=sel_key, opening=opening)
+                diff_val = american_diff(price, opening.get("opening_price"))
                 out["moneyline"][name] = {
                     "open": opening.get("opening_price"),
                     "live": price,
-                    "diff": american_diff(price, opening.get("opening_price")),
+                    "diff": diff_val,
                 }
+                if dbg is not None and OPENINGS_DEBUG:
+                    dbg.append({"key": sel_key, "market": "h2h", "selection": name,
+                                "open": opening.get("opening_price"), "live": price, "diff": diff_val})
 
         elif mkey == "spreads":
             for o in outcomes:
@@ -296,17 +327,23 @@ def normalize_event_record(
                 if not opening:
                     opening = {"opening_point": point, "opening_price": price, "ts": int(time.time())}
                     store.setnx(sel_key, opening)
+                    dlog("opening_set_spreads_first_time", key=sel_key, opening=opening)
+                diff_pt = point_diff(point, opening.get("opening_point"))
                 out["spreads"][name] = {
                     "open_point": opening.get("opening_point"),
                     "open_price": opening.get("opening_price"),
                     "live_point": point,
                     "live_price": price,
-                    "diff_point": point_diff(point, opening.get("opening_point")),
+                    "diff_point": diff_pt,
                 }
+                if dbg is not None and OPENINGS_DEBUG:
+                    dbg.append({"key": sel_key, "market": "spreads", "selection": name,
+                                "open_point": opening.get("opening_point"), "open_price": opening.get("opening_price"),
+                                "live_point": point, "live_price": price, "diff_point": diff_pt})
 
         elif mkey == "totals":
             for o in outcomes:
-                name = o.get("name")  # "Over"/"Under"
+                name = o.get("name")  # Over/Under
                 price = safe_int(o.get("price"))
                 point = safe_float(o.get("point"))
                 sel_key = make_key(sport, event_id, "totals", name, bookmaker)
@@ -314,13 +351,19 @@ def normalize_event_record(
                 if not opening:
                     opening = {"opening_point": point, "opening_price": price, "ts": int(time.time())}
                     store.setnx(sel_key, opening)
+                    dlog("opening_set_totals_first_time", key=sel_key, opening=opening)
+                diff_pt = point_diff(point, opening.get("opening_point"))
                 out["totals"][name] = {
                     "open_point": opening.get("opening_point"),
                     "open_price": opening.get("opening_price"),
                     "live_point": point,
                     "live_price": price,
-                    "diff_point": point_diff(point, opening.get("opening_point")),
+                    "diff_point": diff_pt,
                 }
+                if dbg is not None and OPENINGS_DEBUG:
+                    dbg.append({"key": sel_key, "market": "totals", "selection": name,
+                                "open_point": opening.get("opening_point"), "open_price": opening.get("opening_price"),
+                                "live_point": point, "live_price": price, "diff_point": diff_pt})
 
     return out
 
@@ -359,15 +402,18 @@ def bookmakers():
 
 @app.route("/odds/<sport>")
 def odds_for_sport(sport: str):
+    """Add ?debug=1 to include 'debug' block with keys and values."""
     if sport not in ALLOWED_SPORTS:
         return jsonify({"error": "Unsupported sport"}), 400
     bookmaker = request.args.get("bookmaker", DEFAULT_BOOKMAKER)
+    want_debug = request.args.get("debug") in ("1", "true", "True") and OPENINGS_DEBUG
     if not API_KEY:
         return jsonify({"error": "API_KEY missing"}), 500
     try:
         data = fetch_odds(sport, bookmaker)
         store = OpeningsStore()
-        records = [normalize_event_record(store, sport, e, bookmaker) for e in data]
+        dbg: List[Dict[str, Any]] = [] if want_debug else None
+        records = [normalize_event_record(store, sport, e, bookmaker, dbg) for e in data]
         def _ts(x):
             try:
                 return datetime.fromisoformat(x.get("commence_time").replace("Z",""))
@@ -375,12 +421,31 @@ def odds_for_sport(sport: str):
                 return datetime.max
         records.sort(key=_ts)
         store.flush_if_needed()
-        return jsonify({"sport": sport, "bookmaker": bookmaker, "records": records})
+
+        resp = {"sport": sport, "bookmaker": bookmaker, "records": records}
+        if want_debug:
+            resp["debug"] = dbg
+        return jsonify(resp)
     except requests.HTTPError as e:
         status = e.response.status_code if e.response else 500
         return jsonify({"error": "Odds API error", "status": status, "details": str(e)}), status
     except Exception as e:
         return jsonify({"error": "Server error", "details": str(e)}), 500
+
+@app.route("/debug/peek")
+def debug_peek():
+    """GET /debug/peek?key=<exact_open_key>  -> returns stored opening payload (if any)"""
+    if not OPENINGS_DEBUG:
+        return jsonify({"error": "debug disabled"}), 403
+    key = request.args.get("key")
+    if not key:
+        return jsonify({"error": "missing key"}), 400
+    # RAM/file first
+    store = OpeningsStore()
+    val = store.get(key)
+    if val:
+        return jsonify({"source": "local_or_redis", "key": key, "value": val})
+    return jsonify({"source": "none", "key": key, "value": None})
 
 @app.route("/routes")
 def routes():
