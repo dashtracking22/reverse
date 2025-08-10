@@ -1,135 +1,154 @@
-const baseURL = "";
+const API_BASE = window.location.origin.replace(/\/+$/, ""); // same host/port as Flask
 
-document.addEventListener("DOMContentLoaded", () => {
-  loadSports();
-  document.getElementById("sportSelect").addEventListener("change", fetchOdds);
-  document.getElementById("bookmakerSelect").addEventListener("change", fetchOdds);
-});
+const sportSelect = document.getElementById("sportSelect");
+const bookmakerSelect = document.getElementById("bookmakerSelect");
+const refreshBtn = document.getElementById("refreshBtn");
+const cardsContainer = document.getElementById("cardsContainer");
 
-async function loadSports() {
-  const res = await fetch(`${baseURL}/sports`);
-  const sports = await res.json();
+function isoToLocal(iso){
+  if(!iso) return "";
+  try{
+    const d = new Date(iso);
+    const opts = { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" };
+    return d.toLocaleString(undefined, opts);
+  }catch(e){ return ""; }
+}
 
-  const sportSelect = document.getElementById("sportSelect");
+async function initControls(){
+  const [sports, books] = await Promise.all([
+    fetch(`${API_BASE}/sports`).then(r=>r.json()),
+    fetch(`${API_BASE}/bookmakers`).then(r=>r.json())
+  ]);
+  // Sports
   sportSelect.innerHTML = "";
-
-  sports.forEach(sport => {
-    const option = document.createElement("option");
-    option.value = sport.key;
-    option.textContent = sport.title;
-    sportSelect.appendChild(option);
+  (sports.sports || []).forEach(s=>{
+    const opt = document.createElement("option");
+    opt.value = s; opt.textContent = s;
+    sportSelect.appendChild(opt);
   });
-
-  if (sports.length > 0) {
-    sportSelect.value = sports[0].key;
-    fetchOdds();
+  // Bookmakers
+  bookmakerSelect.innerHTML = "";
+  (books.bookmakers || []).forEach(b=>{
+    const opt = document.createElement("option");
+    opt.value = b; opt.textContent = b;
+    bookmakerSelect.appendChild(opt);
+  });
+  if(books.default){
+    bookmakerSelect.value = books.default;
   }
 }
 
-async function fetchOdds() {
-  const sportSelect = document.getElementById("sportSelect");
-  const bookmakerSelect = document.getElementById("bookmakerSelect");
-  const spinner = document.getElementById("loadingSpinner");
-  const sportKey = sportSelect.value;
-  const bookmaker = bookmakerSelect.value;
+function renderRecords(records){
+  cardsContainer.innerHTML = "";
+  if(!records || !records.length){
+    cardsContainer.innerHTML = `<div class="card"><div class="card-header"><div class="matchup">No games</div></div></div>`;
+    return;
+  }
+  records.forEach(rec=>{
+    const title = `${rec.away_team || "Away"} @ ${rec.home_team || "Home"}`;
+    const when = isoToLocal(rec.commence_time);
 
-  spinner.style.display = "block";
-  sportSelect.disabled = true;
-  bookmakerSelect.disabled = true;
-
-  try {
-    const res = await fetch(`${baseURL}/odds/${sportKey}?bookmaker=${bookmaker}`);
-    const games = await res.json();
-
-    if (!Array.isArray(games)) {
-      throw new Error("Failed to load odds");
+    const moneylineRows = [];
+    for(const [team, vals] of Object.entries(rec.moneyline || {})){
+      const diff = vals.diff;
+      moneylineRows.push(`
+        <div class="tr">
+          <div class="team">${team}</div>
+          <div class="val mono">${vals.open ?? "-"}</div>
+          <div class="val mono">${vals.live ?? "-"}</div>
+          <div class="diff mono ${diff == null ? "" : (diff >= 0 ? "pos":"neg")}">${diff ?? "-"}</div>
+        </div>
+      `);
     }
 
-    renderGames(games);
-  } catch (e) {
-    console.error(e);
-    document.getElementById("gamesContainer").innerHTML = "<p style='color:red;'>Failed to load odds.</p>";
-  } finally {
-    spinner.style.display = "none";
-    sportSelect.disabled = false;
-    bookmakerSelect.disabled = false;
-  }
-}
+    const spreadRows = [];
+    for(const [team, v] of Object.entries(rec.spreads || {})){
+      const diff = v.diff_point;
+      spreadRows.push(`
+        <div class="tr">
+          <div class="team">${team}</div>
+          <div class="val mono">${v.open_point ?? "-" } (${v.open_price ?? "-"})</div>
+          <div class="val mono">${v.live_point ?? "-" } (${v.live_price ?? "-"})</div>
+          <div class="diff mono ${diff == null ? "" : (diff >= 0 ? "pos":"neg")}">${diff ?? "-"}</div>
+        </div>
+      `);
+    }
 
-function renderGames(games) {
-  const container = document.getElementById("gamesContainer");
-  container.innerHTML = "";
+    const totalRows = [];
+    for(const side of ["Over","Under"]){
+      const v = (rec.totals || {})[side];
+      if(!v) continue;
+      const diff = v.diff_point;
+      totalRows.push(`
+        <div class="tr">
+          <div class="team">${side}</div>
+          <div class="val mono">${v.open_point ?? "-" } (${v.open_price ?? "-"})</div>
+          <div class="val mono">${v.live_point ?? "-" } (${v.live_price ?? "-"})</div>
+          <div class="diff mono ${diff == null ? "" : (diff >= 0 ? "pos":"neg")}">${diff ?? "-"}</div>
+        </div>
+      `);
+    }
 
-  games.forEach(game => {
     const card = document.createElement("div");
-    card.className = "game-card";
+    card.className = "card";
+    card.innerHTML = `
+      <div class="card-header">
+        <div class="matchup">${title}</div>
+        <div class="time">${when}</div>
+      </div>
+      <div class="sections">
+        <div class="section">
+          <h4>Moneyline</h4>
+          <div class="th">
+            <div>Team</div><div class="val">Open</div><div class="val">Live</div><div class="val">Diff</div>
+          </div>
+          ${moneylineRows.join("") || `<div class="tr"><div>No data</div></div>`}
+        </div>
 
-    const header = document.createElement("div");
-    header.className = "game-header";
-    header.innerHTML = `
-      <h2>${game.matchup}</h2>
-      <span>${game.commence_time}</span>
+        <div class="section">
+          <h4>Spread</h4>
+          <div class="th">
+            <div>Team</div><div class="val">Open</div><div class="val">Live</div><div class="val">Diff</div>
+          </div>
+          ${spreadRows.join("") || `<div class="tr"><div>No data</div></div>`}
+        </div>
+
+        <div class="section">
+          <h4>Total</h4>
+          <div class="th">
+            <div>Side</div><div class="val">Open</div><div class="val">Live</div><div class="val">Diff</div>
+          </div>
+          ${totalRows.join("") || `<div class="tr"><div>No data</div></div>`}
+        </div>
+      </div>
     `;
-    card.appendChild(header);
-
-    renderSection(card, "Moneyline", game.moneyline);
-    renderSection(card, "Spread", game.spread);
-    renderSection(card, "Total", game.total);
-
-    container.appendChild(card);
+    cardsContainer.appendChild(card);
   });
 }
 
-function renderSection(card, label, data) {
-  if (!data || Object.keys(data).length === 0) return;
-
-  console.log(`Rendering section: ${label}`, data);  // <-- Debug log here
-
-  const box = document.createElement("div");
-  box.className = "odds-box";
-
-  const title = document.createElement("h3");
-  title.textContent = label;
-  box.appendChild(title);
-
-  const grid = document.createElement("div");
-  grid.className = "odds-grid";
-
-  const headerRow = document.createElement("div");
-  headerRow.className = "odds-row header";
-  headerRow.innerHTML = `
-    <div>Team</div>
-    <div>Open</div>
-    <div>Live</div>
-    <div>Diff</div>
-  `;
-  grid.appendChild(headerRow);
-
-  for (const team in data) {
-    const { open, live, diff } = data[team];
-
-    // Additional log per team
-    console.log(`Team: ${team}, Open: ${open}, Live: ${live}, Diff: ${diff}`);
-
-    const row = document.createElement("div");
-    row.className = "odds-row";
-    row.innerHTML = `
-      <div>${team}</div>
-      <div>${open}</div>       <!-- Ensure open odds are displayed -->
-      <div>${live}</div>       <!-- Ensure live odds are displayed -->
-      <div class="diff ${getDiffClass(diff)}">${diff}</div>
-    `;
-    grid.appendChild(row);
+async function loadAndRender(){
+  const sport = sportSelect.value;
+  const bookmaker = bookmakerSelect.value;
+  cardsContainer.innerHTML = "";
+  const url = `${API_BASE}/odds/${encodeURIComponent(sport)}?bookmaker=${encodeURIComponent(bookmaker)}`;
+  const res = await fetch(url);
+  if(!res.ok){
+    const err = await res.json().catch(()=>({}));
+    cardsContainer.innerHTML = `<div class="card"><div class="card-header"><div class="matchup">Error</div><div class="time"></div></div><div class="sections"><div class="section"><div>${err.error || res.status}</div></div></div></div>`;
+    return;
   }
-
-  box.appendChild(grid);
-  card.appendChild(box);
+  const data = await res.json();
+  renderRecords(data.records || []);
 }
 
-function getDiffClass(diff) {
-  if (typeof diff === "string") {
-    if (diff.startsWith("+")) return "positive";
-    if (diff.startsWith("-")) return "negative";
+(async function(){
+  await initControls();
+  // defaults
+  if (Array.from(sportSelect.options).length){
+    sportSelect.value = sportSelect.options[0].value;
   }
-  return "";
-}
+  refreshBtn.addEventListener("click", loadAndRender);
+  sportSelect.addEventListener("change", loadAndRender);
+  bookmakerSelect.addEventListener("change", loadAndRender);
+  loadAndRender();
+})();
