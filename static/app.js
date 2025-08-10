@@ -5,6 +5,27 @@ const bookmakerSelect = document.getElementById("bookmakerSelect");
 const refreshBtn = document.getElementById("refreshBtn");
 const content = document.getElementById("content");
 
+// ----- Pretty labels for dropdowns (values remain API keys) -----
+const SPORT_LABELS = {
+  americanfootball_ncaa: "NCAAF",   // updated key -> friendly name
+  americanfootball_ncaaf: "NCAAF",  // tolerated if it shows up
+  americanfootball_nfl: "NFL",
+  baseball_mlb: "MLB",
+  basketball_nba: "NBA",
+  basketball_wnba: "WNBA",
+  mma_mixed_martial_arts: "MMA",
+};
+
+const BOOKMAKER_LABELS = {
+  betonlineag: "BetOnline",
+  draftkings: "DraftKings",
+  fanduel: "FanDuel",
+  caesars: "Caesars",
+  betmgm: "BetMGM",
+  pointsbetus: "PointsBet",
+  wynnbet: "WynnBET",
+};
+
 // ---- helpers ----
 function isoToLocal(iso){
   if(!iso) return "";
@@ -55,7 +76,7 @@ async function initControls(){
     sports.forEach(key=>{
       const opt = document.createElement("option");
       opt.value = key;
-      opt.textContent = key;
+      opt.textContent = SPORT_LABELS[key] || key;
       sportSelect.appendChild(opt);
     });
   } catch (e) {
@@ -69,7 +90,7 @@ async function initControls(){
     (b.bookmakers || []).forEach(key=>{
       const opt = document.createElement("option");
       opt.value = key;
-      opt.textContent = key;
+      opt.textContent = BOOKMAKER_LABELS[key] || key;
       bookmakerSelect.appendChild(opt);
     });
     if (b.default) bookmakerSelect.value = b.default;
@@ -90,7 +111,7 @@ function render(records){
     const matchup = `${rec.away_team || "Away"} vs ${rec.home_team || "Home"}`;
     const when = isoToLocal(rec.commence_time);
 
-    // Moneyline rows from rec.moneyline {Team:{open,live,diff}}
+    // Moneyline
     let mlRows = "";
     Object.entries(rec.moneyline || {}).forEach(([team, vals])=>{
       const d = vals?.diff;
@@ -104,7 +125,7 @@ function render(records){
       `;
     });
 
-    // Spreads rows from rec.spreads {Team:{open_point,open_price,live_point,live_price,diff_point}}
+    // Spreads
     let spRows = "";
     Object.entries(rec.spreads || {}).forEach(([team, v])=>{
       const d = v?.diff_point;
@@ -118,7 +139,7 @@ function render(records){
       `;
     });
 
-    // Totals rows from rec.totals {Over:{...},Under:{...}}
+    // Totals
     let totRows = "";
     ["Over","Under"].forEach(side=>{
       const v = (rec.totals||{})[side];

@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 import requests
+from requests.adapters import HTTPAdapter
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
@@ -15,10 +16,13 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 API_KEY = os.getenv("API_KEY")  # REQUIRED on Render
 REGION = "us"
 ODDS_FORMAT = "american"
-CACHE_SECONDS = 20
+CACHE_SECONDS = 60  # keep a small cache to speed things up
 
+# Accept the key you actually see: americanfootball_ncaa
+# (Keep _ncaaf in the allow-list too, just in case the upstream API returns that)
 ALLOWED_SPORTS = [
-    "americanfootball_ncaaf",
+    "americanfootball_ncaa",      # <- primary (your note)
+    "americanfootball_ncaaf",     # <- tolerated
     "americanfootball_nfl",
     "basketball_nba",
     "basketball_wnba",
@@ -31,13 +35,18 @@ BOOKMAKERS = [
     "betonlineag",
     "draftkings",
     "fanduel",
-    "pointsbetus",
     "caesars",
     "betmgm",
+    "pointsbetus",
     "wynnbet",
 ]
 
 MARKETS = ["h2h", "spreads", "totals"]
+
+# --------- Global HTTP session (connection pooling) ----------
+HTTP = requests.Session()
+HTTP.mount("https://", HTTPAdapter(pool_connections=50, pool_maxsize=50))
+HTTP.mount("http://", HTTPAdapter(pool_connections=50, pool_maxsize=50))
 
 # --------- Simple in-proc cache ----------
 _cache_lock = threading.Lock()
@@ -63,6 +72,18 @@ UPSTASH_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN")
 ODDS_LOG_PATH = "odds_log.json"
 _file_lock = threading.Lock()
 
+# simple in-memory memo for opening odds
+_openings_mem_lock = threading.Lock()
+_openings_mem: Dict[str, Dict[str, Any]] = {}
+
+def _memo_get(key: str) -> Optional[Dict[str, Any]]:
+    with _openings_mem_lock:
+        return _openings_mem.get(key)
+
+def _memo_set(key: str, payload: Dict[str, Any]):
+    with _openings_mem_lock:
+        _openings_mem[key] = payload
+
 def _safe_load_json(path: str) -> Dict[str, Any]:
     with _file_lock:
         try:
@@ -86,11 +107,11 @@ def _safe_save_json(path: str, data: Dict[str, Any]):
         os.replace(tmp, path)
 
 def _redis_setnx(key: str, value: str) -> bool:
-    """True if set (didn't exist). Uses Upstash REST GET endpoints or local file fallback."""
+    """True if set (didn't exist)."""
     if UPSTASH_URL and UPSTASH_TOKEN:
         url = f"{UPSTASH_URL}/setnx/{key}/{value}"
         headers = {"Authorization": f"Bearer {UPSTASH_TOKEN}"}
-        r = requests.get(url, headers=headers, timeout=10)  # GET avoids 405s on some setups
+        r = HTTP.get(url, headers=headers, timeout=10)
         r.raise_for_status()
         try:
             return bool(int(r.text.strip()))
@@ -106,10 +127,14 @@ def _redis_setnx(key: str, value: str) -> bool:
     return True
 
 def _redis_get(key: str) -> Optional[str]:
+    m = _memo_get(key)
+    if m is not None:
+        return json.dumps(m, separators=(",", ":"), ensure_ascii=False)
+
     if UPSTASH_URL and UPSTASH_TOKEN:
         url = f"{UPSTASH_URL}/get/{key}"
         headers = {"Authorization": f"Bearer {UPSTASH_TOKEN}"}
-        r = requests.get(url, headers=headers, timeout=10)
+        r = HTTP.get(url, headers=headers, timeout=10)
         if r.status_code == 404:
             return None
         r.raise_for_status()
@@ -119,15 +144,21 @@ def _redis_get(key: str) -> Optional[str]:
     return data.get(key)
 
 def _persist_opening_once(key: str, payload: Dict[str, Any]):
+    _memo_set(key, payload)
     value = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
     _redis_setnx(key, value)
 
 def _get_opening_payload(key: str) -> Optional[Dict[str, Any]]:
+    m = _memo_get(key)
+    if m is not None:
+        return m
     raw = _redis_get(key)
     if not raw:
         return None
     try:
-        return json.loads(raw)
+        parsed = json.loads(raw)
+        _memo_set(key, parsed)
+        return parsed
     except Exception:
         return None
 
@@ -135,7 +166,7 @@ def _get_opening_payload(key: str) -> Optional[Dict[str, Any]]:
 BASE = "https://api.the-odds-api.com/v4"
 
 def fetch_odds(sport: str, bookmaker: str) -> Any:
-    cache_key = f"odds:{sport}:{bookmaker}"
+    cache_key = f"odds_raw:{sport}:{bookmaker}"
     cached = get_cache(cache_key)
     if cached:
         return cached
@@ -147,7 +178,7 @@ def fetch_odds(sport: str, bookmaker: str) -> Any:
         "oddsFormat": ODDS_FORMAT,
     }
     url = f"{BASE}/sports/{sport}/odds"
-    r = requests.get(url, params=params, timeout=25)
+    r = HTTP.get(url, params=params, timeout=25)
     r.raise_for_status()
     data = r.json()
     set_cache(cache_key, data)
@@ -277,10 +308,9 @@ def root():
 
 @app.route("/sports")
 def sports():
-    """Normalize to keys so the dropdown always fills."""
-    app.logger.info("HIT /sports")
+    """Normalize to keys your UI expects."""
     try:
-        r = requests.get(
+        r = HTTP.get(
             f"{BASE}/sports",
             params={"apiKey": API_KEY, "all": "false"},
             timeout=15
@@ -288,16 +318,15 @@ def sports():
         r.raise_for_status()
         arr = r.json()
         keys = [x.get("key") for x in arr if x.get("active")]
+        # Keep only those we explicitly support
         keys = [k for k in keys if k in ALLOWED_SPORTS]
-        app.logger.info("Returning %d sports", len(keys))
         return jsonify({"sports": keys})
     except Exception as e:
-        app.logger.warning("Sports fallback due to error: %s", e)
+        # fallback to our allowlist if the Odds API stumbles
         return jsonify({"sports": ALLOWED_SPORTS, "note": "fallback"}), 200
 
 @app.route("/bookmakers")
 def bookmakers():
-    """Plain, fixed shape for the UI."""
     return jsonify({"bookmakers": BOOKMAKERS, "default": DEFAULT_BOOKMAKER})
 
 @app.route("/odds/<sport>")
@@ -310,11 +339,13 @@ def odds_for_sport(sport: str):
     try:
         data = fetch_odds(sport, bookmaker)
         records = [normalize_event_record(sport, e, bookmaker) for e in data]
+
         def _ts(x):
             try:
                 return datetime.fromisoformat(x.get("commence_time").replace("Z",""))
             except Exception:
                 return datetime.max
+
         records.sort(key=_ts)
         return jsonify({"sport": sport, "bookmaker": bookmaker, "records": records})
     except requests.HTTPError as e:
@@ -325,7 +356,6 @@ def odds_for_sport(sport: str):
 
 @app.route("/routes")
 def routes():
-    """Diagnostics: list registered routes."""
     try:
         rules = []
         for r in app.url_map.iter_rules():
@@ -340,5 +370,5 @@ def health():
     return jsonify({"ok": True})
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", "5050"))  # Render provides PORT
+    port = int(os.getenv("PORT", "5050"))
     app.run(host="0.0.0.0", port=port, debug=True)
