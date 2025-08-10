@@ -1,173 +1,141 @@
-const API_BASE = window.location.origin.replace(/\/+$/, "");
+const API_BASE = "https://reversetracking.onrender.com";
 
-// Local fallback list so the Sport dropdown works even if /sports fails
+// Fallbacks in case /sports or /bookmakers fail
 const FALLBACK_SPORTS = [
-  "americanfootball_ncaaf",
-const API_BASE = window.location.origin.replace(/\/+$/, "");
+  { key: "americanfootball_ncaaf", title: "NCAAF" },
+  { key: "americanfootball_nfl", title: "NFL" },
+  { key: "baseball_mlb", title: "MLB" },
+  { key: "basketball_nba", title: "NBA" },
+  { key: "basketball_wnba", title: "WNBA" },
+  { key: "mma_mixed_martial_arts", title: "MMA" }
+];
+
+const FALLBACK_BOOKMAKERS = [
+  { key: "betonlineag", title: "BetOnlineAG" },
+  { key: "draftkings", title: "DraftKings" },
+  { key: "fanduel", title: "FanDuel" }
+];
 
 const sportSelect = document.getElementById("sportSelect");
 const bookmakerSelect = document.getElementById("bookmakerSelect");
 const refreshBtn = document.getElementById("refreshBtn");
 const content = document.getElementById("content");
 
-function isoToLocal(iso){
-  if(!iso) return "";
-  try{
-    const d = new Date(iso);
-    const opts = { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" };
-    return d.toLocaleString(undefined, opts);
-  }catch(e){ return ""; }
+async function fetchSports() {
+  try {
+    const res = await fetch(`${API_BASE}/sports`);
+    if (!res.ok) throw new Error(`Sports API error: ${res.status}`);
+    const sports = await res.json();
+    populateSports(sports);
+  } catch (err) {
+    console.error("Failed to load sports from API, using fallback:", err);
+    populateSports(FALLBACK_SPORTS);
+  }
 }
 
-function signed(val){
-  if(val == null || isNaN(val)) return "-";
-  const n = Number(val);
-  return (n > 0 ? `+${n}` : `${n}`);
-}
-
-async function initControls(){
-  // Sports (expects {"sports":[...]})
-  const sportsResp = await fetch(`${API_BASE}/sports`).then(r=>r.json());
-  const sportKeys = Array.isArray(sportsResp?.sports) ? sportsResp.sports : [];
+function populateSports(sports) {
   sportSelect.innerHTML = "";
-  sportKeys.forEach(s=>{
+  sports.forEach(sport => {
     const opt = document.createElement("option");
-    opt.value = s; opt.textContent = s;
+    opt.value = sport.key;
+    opt.textContent = sport.title;
     sportSelect.appendChild(opt);
   });
+}
 
-  // Bookmakers (expects {"bookmakers":[...], "default":"..."})
-  const books = await fetch(`${API_BASE}/bookmakers`).then(r=>r.json());
+async function fetchBookmakers() {
+  try {
+    const res = await fetch(`${API_BASE}/bookmakers`);
+    if (!res.ok) throw new Error(`Bookmakers API error: ${res.status}`);
+    const bookmakers = await res.json();
+    populateBookmakers(bookmakers);
+  } catch (err) {
+    console.error("Failed to load bookmakers from API, using fallback:", err);
+    populateBookmakers(FALLBACK_BOOKMAKERS);
+  }
+}
+
+function populateBookmakers(bookmakers) {
   bookmakerSelect.innerHTML = "";
-  (books.bookmakers || []).forEach(b=>{
+  bookmakers.forEach(bm => {
     const opt = document.createElement("option");
-    opt.value = b; opt.textContent = b;
+    opt.value = bm.key;
+    opt.textContent = bm.title;
     bookmakerSelect.appendChild(opt);
   });
-  if(books.default){ bookmakerSelect.value = books.default; }
 }
 
-function rowDiffClass(v){
-  if (v == null || isNaN(v)) return "";
-  return Number(v) >= 0 ? "diff pos" : "diff neg";
+async function fetchOdds() {
+  const sport = sportSelect.value;
+  const bookmaker = bookmakerSelect.value;
+
+  if (!sport || !bookmaker) {
+    console.warn("Sport or bookmaker not selected.");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/odds/${sport}?bookmaker=${bookmaker}`);
+    if (!res.ok) throw new Error(`Odds API error: ${res.status}`);
+    const data = await res.json();
+    renderOdds(data);
+  } catch (err) {
+    console.error("Failed to load odds:", err);
+    content.innerHTML = `<p class="error">Failed to load odds. Check console.</p>`;
+  }
 }
 
-function renderTable(title, rowsHtml){
+function renderOdds(data) {
+  if (!data || !data.length) {
+    content.innerHTML = "<p>No games available.</p>";
+    return;
+  }
+
+  let html = "";
+  data.forEach(game => {
+    html += `
+      <div class="game-card">
+        <h3>${game.commence_time} — ${game.home_team} vs ${game.away_team}</h3>
+        ${renderMarket("Moneyline", game.markets.moneyline)}
+        ${renderMarket("Spread", game.markets.spread)}
+        ${renderMarket("Total", game.markets.total)}
+      </div>
+    `;
+  });
+  content.innerHTML = html;
+}
+
+function renderMarket(title, market) {
+  if (!market || !market.length) return "";
+  let rows = "";
+  market.forEach(team => {
+    rows += `
+      <tr>
+        <td>${team.name}</td>
+        <td>${team.open}</td>
+        <td>${team.live}</td>
+        <td>${team.diff}</td>
+      </tr>
+    `;
+  });
   return `
-    <div class="section">
-      <h3>${title}</h3>
-      <table class="table">
+    <div class="market">
+      <h4>${title}</h4>
+      <table>
         <thead>
-          <tr><th>Team</th><th class="num">Open</th><th class="num">Live</th><th class="num">Diff</th></tr>
+          <tr><th>Team</th><th>Open</th><th>Live</th><th>Diff</th></tr>
         </thead>
-        <tbody>
-          ${rowsHtml || `<tr><td colspan="4" style="color:#6b7280">No data</td></tr>`}
-        </tbody>
+        <tbody>${rows}</tbody>
       </table>
     </div>
   `;
 }
 
-function fmtPriceMaybe(x){ return (x==null || x===undefined) ? "-" : x; }
-function fmtPointWithPrice(point, price){
-  const p = (point==null || point===undefined) ? "-" : point;
-  const pr = (price==null || price===undefined) ? "-" : price;
-  return `${p} (${pr})`;
-}
+// Event listeners
+refreshBtn.addEventListener("click", fetchOdds);
+sportSelect.addEventListener("change", fetchOdds);
+bookmakerSelect.addEventListener("change", fetchOdds);
 
-function render(records){
-  const container = content;
-  container.innerHTML = "";
-  if(!records || !records.length){
-    container.innerHTML = `<div class="game"><div class="title">No games</div></div>`;
-    return;
-  }
-
-  records.forEach(rec=>{
-    const matchup = `${rec.away_team || "Away"} vs ${rec.home_team || "Home"}`;
-    const when = isoToLocal(rec.commence_time);
-
-    // Moneyline
-    let mlRows = "";
-    Object.entries(rec.moneyline || {}).forEach(([team, vals])=>{
-      const d = vals.diff;
-      mlRows += `
-        <tr>
-          <td>${team}</td>
-          <td class="num">${fmtPriceMaybe(vals.open)}</td>
-          <td class="num">${fmtPriceMaybe(vals.live)}</td>
-          <td class="num ${rowDiffClass(d)}">${d==null? "-": signed(d)}</td>
-        </tr>
-      `;
-    });
-
-    // Spread (point diff only)
-    let spRows = "";
-    Object.entries(rec.spreads || {}).forEach(([team, v])=>{
-      const d = v.diff_point;
-      spRows += `
-        <tr>
-          <td>${team}</td>
-          <td class="num">${fmtPointWithPrice(v.open_point, v.open_price)}</td>
-          <td class="num">${fmtPointWithPrice(v.live_point, v.live_price)}</td>
-          <td class="num ${rowDiffClass(d)}">${d==null? "-": signed(d)}</td>
-        </tr>
-      `;
-    });
-
-    // Totals (point diff only)
-    let totRows = "";
-    ["Over","Under"].forEach(side=>{
-      const v = (rec.totals||{})[side];
-      if(!v) return;
-      const d = v.diff_point;
-      totRows += `
-        <tr>
-          <td>${side}</td>
-          <td class="num">${fmtPointWithPrice(v.open_point, v.open_price)}</td>
-          <td class="num">${fmtPointWithPrice(v.live_point, v.live_price)}</td>
-          <td class="num ${rowDiffClass(d)}">${d==null? "-": signed(d)}</td>
-        </tr>
-      `;
-    });
-
-    const gameEl = document.createElement("div");
-    gameEl.className = "game";
-    gameEl.innerHTML = `
-      <div class="title">
-        <span class="when">${when}</span> — <span>${matchup}</span>
-      </div>
-      ${renderTable("Moneyline", mlRows)}
-      ${renderTable("Spread", spRows)}
-      ${renderTable("Total", totRows)}
-    `;
-    container.appendChild(gameEl);
-  });
-}
-
-async function loadAndRender(){
-  const sport = sportSelect.value;
-  const bookmaker = bookmakerSelect.value;
-  content.innerHTML = "";
-
-  if(!sport){
-    content.innerHTML = `<div class="game"><div class="title">Choose a sport</div></div>`;
-    return;
-  }
-
-  const url = `${API_BASE}/odds/${encodeURIComponent(sport)}?bookmaker=${encodeURIComponent(bookmaker)}`;
-  const res = await fetch(url);
-  if(!res.ok){
-    const err = await res.json().catch(()=>({}));
-    content.innerHTML = `<div class="game"><div class="title">Error: ${err.error || res.status}</div></div>`;
-    return;
-  }
-  const data = await res.json();
-  render(data.records || []);
-}
-
-(async function(){
-  await initControls();
-  if (sportSelect.options.length){ sportSelect.value = sportSelect.options[0].value; }
-  refreshBtn.addEventListener("click", loadAndRender);
-  sportSelect.addEventListener("change", lo
+// Init
+fetchSports();
+fetchBookmakers();
