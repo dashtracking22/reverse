@@ -1,0 +1,30 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / editor folders (VSCode, JetBrains, etc.)
+.vscode/
+.idea/
+
+# Virtualenv
+.venv/
+env/
+venv/
+
+# Environment variables and secrets
+.env
+*.env
+
+# Local odds logs (should not be versioned)
+odds_log.json
+opening_odds.json
+
+# Anything else you don’t want in Git
+
+
+

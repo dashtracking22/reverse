@@ -1,32 +1,26 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Multi-Sport Odds Tracker</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="/static/styles.css?v=20250810a">
+    <meta charset="UTF-8">
+    <title>Reverse Tracking Odds</title>
+    <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <header class="header">
-    <h1>Multi-Sport Odds Tracker</h1>
-    <div class="sub">Powered by Cash Bros LLC.</div>
+    <header>
+        <h1>Cash Bros LLC</h1>
+        <div class="controls">
+            <label for="sportSelect">Sport:</label>
+            <select id="sportSelect"></select>
 
-    <div class="controls">
-      <label>
-        <span>Sport</span>
-        <select id="sportSelect"></select>
-      </label>
-      <label>
-        <span>Bookmaker</span>
-        <select id="bookmakerSelect"></select>
-      </label>
-      <button id="refreshBtn" class="btn">Refresh</button>
-    </div>
-  </header>
+            <label for="bookmakerSelect">Bookmaker:</label>
+            <select id="bookmakerSelect"></select>
+        </div>
+    </header>
 
-  <main id="content" class="content"></main>
+    <main>
+        <div id="gamesContainer"></div>
+    </main>
 
-  <!-- Cache-busted script to ensure latest JS loads -->
-  <script src="/static/app.js?v=20250810i"></script>
+    <script src="/static/app.js"></script>
 </body>
 </html>
